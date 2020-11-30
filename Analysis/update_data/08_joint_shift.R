@@ -1,3 +1,12 @@
+# switch up library path for the slurm monster
+r_libdir <- Sys.getenv("R_LIBDIR")
+
+# set user-specific package library
+if (grepl("savio2", Sys.info()["nodename"])) {
+  .libPaths(r_libdir)
+  Sys.setenv(R_REMOTES_NO_ERRORS_FROM_WARNINGS="true")
+}
+
 library(sl3)
 library(origami)
 library(dplyr)
@@ -461,238 +470,92 @@ pm25_impact_day100_deaths <- bootstrap_marginal_predictions(target_variable = c(
 saveRDS(pm25_impact_day100_deaths, here("Analysis/update_data/data/processed/pm25_impact_day100_deaths.RDS"))
 
 
-######################
-### Total to date ####
-######################
-
-joint_impact_day_all_deaths <- bootstrap_marginal_predictions(target_variable = c("ALWAYS", "pm25", "pct_black_only_2018", "prev_2017_all_ages_Hypertension"), 
-                                                             ML_pipeline_result = ML_pipeline_results[[5]],
-                                                             outcome = target_outcomes[[5]],
-                                                             boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
-                                                             sub_cat_vars = unique(unlist(top_var_subcat_vars)),
-                                                             boot_df_univar_gam = boot_dfs_univar_gam[[5]],
-                                                             boot_df_sf_full = boot_dfs_sl_full[[5]],
-                                                             data_original = data_original,
-                                                             covars = covars,
-                                                             percents = percents,
-                                                             pop = data_original$Population,
-                                                             boot_num = 5,
-                                                             target_num = 4)
-
-pm25_impact_all_deaths <- bootstrap_marginal_predictions(target_variable = "pm25", 
-                                                           ML_pipeline_result = ML_pipeline_results[[5]],
-                                                           outcome = target_outcomes[[5]],
-                                                           boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
-                                                           boot_df_univar_gam = boot_dfs_univar_gam[[5]],
-                                                           boot_df_sf_full = boot_dfs_sl_full[[5]],
-                                                           sub_cat_vars = unique(unlist(top_var_subcat_vars)),
-                                                           data_original = data_original,
-                                                           covars = covars,
-                                                           percents = percents,
-                                                           pop = data_original$Population,
-                                                           boot_num = 5, 
-                                                           target_num = 1)
-
-mask_impact_all_deaths <- bootstrap_marginal_predictions(target_variable = c("ALWAYS"), 
-                                                            ML_pipeline_result = ML_pipeline_results[[5]],
-                                                            outcome = target_outcomes[[5]],
-                                                            boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
-                                                            boot_df_univar_gam = boot_dfs_univar_gam[[5]],
-                                                            boot_df_sf_full = boot_dfs_sl_full[[5]],
-                                                            sub_cat_vars = unique(unlist(top_var_subcat_vars)),
-                                                            data_original = data_original,
-                                                            covars = covars,
-                                                            percents = percents,
-                                                            pop = data_original$Population,
-                                                            boot_num = 5,
-                                                            target_num = 1)
-
-prop_black_all_deaths <- bootstrap_marginal_predictions(target_variable = c("pct_black_only_2018"), 
-                                                                  ML_pipeline_result = ML_pipeline_results[[5]],
-                                                                  outcome = target_outcomes[[5]],
-                                                                  boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
-                                                                  boot_df_sf_full = boot_dfs_sl_full[[5]],
-                                                                  boot_df_univar_gam = boot_dfs_univar_gam[[5]],
-                                                                  sub_cat_vars = unique(unlist(top_var_subcat_vars)),
-                                                                  data_original = data_original,
-                                                                  covars = covars,
-                                                                  percents = percents,
-                                                                  pop = data_original$Population,
-                                                                  boot_num = 5,
-                                                                  target_num = 1)
-
-hypertension_all_deaths <- bootstrap_marginal_predictions(target_variable = c("prev_2017_all_ages_Hypertension"), 
-                                                        ML_pipeline_result = ML_pipeline_results[[5]],
-                                                        outcome = target_outcomes[[5]],
-                                                        boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
-                                                        boot_df_sf_full = boot_dfs_sl_full[[5]],
-                                                        boot_df_univar_gam = boot_dfs_univar_gam[[5]],
-                                                        sub_cat_vars = unique(unlist(top_var_subcat_vars)),
-                                                        data_original = data_original,
-                                                        covars = covars,
-                                                        percents = percents,
-                                                        pop = data_original$Population,
-                                                        boot_num = 5,
-                                                        target_num = 1)
-
-no2_all_deaths <- bootstrap_marginal_predictions(target_variable = c("no2"), 
-                                                          ML_pipeline_result = ML_pipeline_results[[5]],
-                                                          outcome = target_outcomes[[5]],
-                                                          boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
-                                                          boot_df_sf_full = boot_dfs_sl_full[[5]],
-                                                          boot_df_univar_gam = boot_dfs_univar_gam[[5]],
-                                                          sub_cat_vars = unique(unlist(top_var_subcat_vars)),
-                                                          data_original = data_original,
-                                                          covars = covars,
-                                                          percents = percents,
-                                                          pop = data_original$Population,
-                                                          boot_num = 5,
-                                                          target_num = 1)
-
-
-##### bring together day 100 data ##########
-############################################
-
-joint_100 <- joint_impact_day100_deaths$no_subcat_sl_results$boot_CI_df_sl_nosubcat
-colnames(joint_100)[1] <- "Perc"
-joint_100$var <- "Joint Imp"
-
-pm_100 <- pm25_impact_day100_deaths$no_subcat_sl_results$boot_CI_df_sl_nosubcat
-colnames(pm_100)[1] <- "Perc"
-pm_100$var <- "pm25"
-
-no2_100 <- no2_impact_day100_deaths$no_subcat_sl_results$boot_CI_df_sl_nosubcat
-colnames(no2_100)[1] <- "Perc"
-no2_100$var <- "no2"
-
-mask_100 <- mask_impact_day100_deaths$no_subcat_sl_results$boot_CI_df_sl_nosubcat
-colnames(mask_100)[1] <- "Perc"
-mask_100$var <- "Always Masked"
-
-black_100 <- prop_black_impact_day100_deaths$no_subcat_sl_results$boot_CI_df_sl_nosubcat
-colnames(black_100)[1] <- "Perc"
-black_100$var <- "Proportion Black"
-
-joint_boot_df_100 <- rbind(joint_100, pm_100, no2_100, mask_100, black_100 )
-
-##### bring together day total death data ##########
-####################################################
-
-joint_total <- joint_impact_day_all_deaths$no_subcat_sl_results$boot_CI_df_sl_nosubcat
-colnames(joint_total)[1] <- "Perc"
-joint_total$var <- "Joint Imp"
-
-pm_total <- pm25_impact_all_deaths$no_subcat_sl_results$boot_CI_df_sl_nosubcat
-colnames(pm_total)[1] <- "Perc"
-pm_total$var <- "pm25"
-
-hyper_total <- hypertension_all_deaths$no_subcat_sl_results$boot_CI_df_sl_nosubcat
-colnames(hyper_total)[1] <- "Perc"
-hyper_total$var <- "hypertension"
-
-mask_total <- mask_impact_all_deaths$no_subcat_sl_results$boot_CI_df_sl_nosubcat
-colnames(mask_total)[1] <- "Perc"
-mask_total$var <- "Always Masked"
-
-black_total <- prop_black_all_deaths$no_subcat_sl_results$boot_CI_df_sl_nosubcat
-colnames(black_total)[1] <- "Perc"
-black_total$var <- "Proportion Black"
-
-joint_boot_df_total <- rbind(joint_total, pm_total, hyper_total, mask_total, black_total )
-
-
-
-plot_bootstrap_results <- function(boot_res = joint_boot_df_total,
-                                   desc_outcome,
-                                   desc_var,
-                                   actual_outcome) {
-  
-  title <- as.character(desc_var)
-  ylabel <- as.character(desc_outcome)
-  
-  boot_res$var <- as.factor(boot_res$var)
-  file_name <- paste(desc_outcome, "_marginal_predictions_", title, ".png", sep = "")
-  
-  
-  plot <- ggplot(boot_res, aes(x = boot_res[, "Perc"], y = `Boot Pred`, colour = var)) +
-    geom_line(aes(linetype = `var`, colour = `var`)) +
-    geom_point(aes(y = `Boot Pred`, colour = `var`)) +
-    geom_errorbar(
-      aes(ymin = `Boot Low`, ymax = `Boot High`, group = `var`),
-      width = 0.05
-    ) +
-    xlab("Percent Reduced") +
-    ylab("Toots") +
-    labs(title = title) +
-    geom_hline(yintercept = actual_outcome)
-  
-  
-  plot <- ggplot(boot_res, aes(x = boot_res[, target_variable], y = `Boot Pred`, colour = `Model Type`)) +
-    geom_line(aes(linetype = `Model Type`, colour = `Model Type`)) +
-    geom_point(aes(y = `Boot Pred`, colour = `Model Type`)) +
-    geom_errorbar(
-      aes(ymin = `Boot Low`, ymax = `Boot High`, group = `Model Type`),
-      width = 0.05
-    ) +
-    xlab("Percent Reduced") +
-    ylab(ylabel) +
-    labs(title = title) +
-    geom_hline(yintercept = actual_outcome)
-  
-  ggsave(
-    filename = file_name,
-    plot = plot,
-    device = NULL,
-    path = here("/Visulizations/marginal_predictions"),
-    scale = 1,
-    width = NA,
-    height = NA,
-    units = c("in", "cm", "mm"),
-    dpi = 300,
-    limitsize = TRUE
-  )
-}
-
-
-##############################################################################################
-## run linear models through one axis of the 3d arrays of the bootstrap in order to derive coefficients for predictions that look linear:
-
-coef_list_of_lists <- list()
-pval_list_of_lists <- list()
-
-boot_data <- pm25_impact_all_deaths$no_subcat_sl_results$boot_sl_nosubcat_array
-
-  
-coef_list <- list()
-pval_list <- list()
-names(boot_data) <- percents
-
-for (j in 1:dim(boot_data)[1]) {
-  
-  data <- boot_data[j, ]
-  data <- t(data)
-  data <- as.data.frame(data)
-  data$perc <- as.numeric(rownames(data))
-  colnames(data) <- c("Outcome", "Percent Changed")
-  coef <- coef(lm(Outcome ~ `Percent Changed`, data = data))[[2]]
-  pval <- summary(lm(Outcome ~ `Percent Changed`, data = data))[4][[1]][8]
-  coef <- coef / 10
-  coef_list[[j]] <- coef
-  pval_list[[j]] <- pval
-  }
-
-coef_list_of_lists[[i]] <- coef_list
-pval_list_of_lists[[i]] <- pval_list
-
-quantile(unlist(coef_list), probs = c(0.025, 0.50, 0.975))
-quantile(unlist(pval_list), probs = c(0.025, 0.50, 0.975))
-
-lm_boot_results <- map(.x = coef_list_of_lists, ~quantile(unlist(.x),  probs = c(0.025, 0.50, 0.975)))
-lm_pval_boot_results <- map(.x = pval_list_of_lists, ~quantile(unlist(.x),  probs = c(0.025, 0.50, 0.975)))
-
-lm_day_first_case <- lm_boot_results[1]
-lm_day_25_cases <- lm_boot_results[2]
-lm_total_to_date_cases <- lm_boot_results[3]
-lm_day_100_deaths <- lm_boot_results[4]
-lm_total_to_date_deaths <- lm_boot_results[5]
-
+# ######################
+# ### Total to date ####
+# ######################
+# 
+# joint_impact_day_all_deaths <- bootstrap_marginal_predictions(target_variable = c("ALWAYS", "pm25", "pct_black_only_2018", "prev_2017_all_ages_Hypertension"), 
+#                                                              ML_pipeline_result = ML_pipeline_results[[5]],
+#                                                              outcome = target_outcomes[[5]],
+#                                                              boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
+#                                                              sub_cat_vars = unique(unlist(top_var_subcat_vars)),
+#                                                              boot_df_univar_gam = boot_dfs_univar_gam[[5]],
+#                                                              boot_df_sf_full = boot_dfs_sl_full[[5]],
+#                                                              data_original = data_original,
+#                                                              covars = covars,
+#                                                              percents = percents,
+#                                                              pop = data_original$Population,
+#                                                              boot_num = 5,
+#                                                              target_num = 4)
+# 
+# pm25_impact_all_deaths <- bootstrap_marginal_predictions(target_variable = "pm25", 
+#                                                            ML_pipeline_result = ML_pipeline_results[[5]],
+#                                                            outcome = target_outcomes[[5]],
+#                                                            boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
+#                                                            boot_df_univar_gam = boot_dfs_univar_gam[[5]],
+#                                                            boot_df_sf_full = boot_dfs_sl_full[[5]],
+#                                                            sub_cat_vars = unique(unlist(top_var_subcat_vars)),
+#                                                            data_original = data_original,
+#                                                            covars = covars,
+#                                                            percents = percents,
+#                                                            pop = data_original$Population,
+#                                                            boot_num = 5, 
+#                                                            target_num = 1)
+# 
+# mask_impact_all_deaths <- bootstrap_marginal_predictions(target_variable = c("ALWAYS"), 
+#                                                             ML_pipeline_result = ML_pipeline_results[[5]],
+#                                                             outcome = target_outcomes[[5]],
+#                                                             boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
+#                                                             boot_df_univar_gam = boot_dfs_univar_gam[[5]],
+#                                                             boot_df_sf_full = boot_dfs_sl_full[[5]],
+#                                                             sub_cat_vars = unique(unlist(top_var_subcat_vars)),
+#                                                             data_original = data_original,
+#                                                             covars = covars,
+#                                                             percents = percents,
+#                                                             pop = data_original$Population,
+#                                                             boot_num = 5,
+#                                                             target_num = 1)
+# 
+# prop_black_all_deaths <- bootstrap_marginal_predictions(target_variable = c("pct_black_only_2018"), 
+#                                                                   ML_pipeline_result = ML_pipeline_results[[5]],
+#                                                                   outcome = target_outcomes[[5]],
+#                                                                   boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
+#                                                                   boot_df_sf_full = boot_dfs_sl_full[[5]],
+#                                                                   boot_df_univar_gam = boot_dfs_univar_gam[[5]],
+#                                                                   sub_cat_vars = unique(unlist(top_var_subcat_vars)),
+#                                                                   data_original = data_original,
+#                                                                   covars = covars,
+#                                                                   percents = percents,
+#                                                                   pop = data_original$Population,
+#                                                                   boot_num = 5,
+#                                                                   target_num = 1)
+# 
+# hypertension_all_deaths <- bootstrap_marginal_predictions(target_variable = c("prev_2017_all_ages_Hypertension"), 
+#                                                         ML_pipeline_result = ML_pipeline_results[[5]],
+#                                                         outcome = target_outcomes[[5]],
+#                                                         boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
+#                                                         boot_df_sf_full = boot_dfs_sl_full[[5]],
+#                                                         boot_df_univar_gam = boot_dfs_univar_gam[[5]],
+#                                                         sub_cat_vars = unique(unlist(top_var_subcat_vars)),
+#                                                         data_original = data_original,
+#                                                         covars = covars,
+#                                                         percents = percents,
+#                                                         pop = data_original$Population,
+#                                                         boot_num = 5,
+#                                                         target_num = 1)
+# 
+# no2_all_deaths <- bootstrap_marginal_predictions(target_variable = c("no2"), 
+#                                                           ML_pipeline_result = ML_pipeline_results[[5]],
+#                                                           outcome = target_outcomes[[5]],
+#                                                           boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
+#                                                           boot_df_sf_full = boot_dfs_sl_full[[5]],
+#                                                           boot_df_univar_gam = boot_dfs_univar_gam[[5]],
+#                                                           sub_cat_vars = unique(unlist(top_var_subcat_vars)),
+#                                                           data_original = data_original,
+#                                                           covars = covars,
+#                                                           percents = percents,
+#                                                           pop = data_original$Population,
+#                                                           boot_num = 5,
+#                                                           target_num = 1)
+# 
+# 
