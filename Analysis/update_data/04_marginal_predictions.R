@@ -14,8 +14,9 @@ library(tidyr)
 library(gbm)
 
 
-library(future)
-plan(multiprocess)
+library(doParallel)
+registerDoParallel(cores=2)
+
 
 `%notin%` <- Negate(`%in%`)
 
@@ -241,6 +242,7 @@ bootsrap_marginal_predictions <- function(target_variable,
                                           percents,
                                           pop,
                                           boot_num) {
+  
   initialize_data <- rep(NaN, dim(data_original)[1] * boot_num * length(percents))
 
   boot_data_array_full_sl <- as.data.frame(matrix(0, ncol = length(percents), nrow = boot_num))
@@ -353,21 +355,55 @@ end_time <- Sys.time()
 
 end_time - start_time
 
-saveRDS(boot_results, here("Analysis/update_data/data/processed/BootResults_July30.RDS"))
+saveRDS(boot_results, here("Analysis/update_data/data/processed/BootResults_Aug30.RDS"))
 
 
 ## make sure reproducible:
-boot_results_reload <- readRDS(here("Analysis/update_data/data/processed/BootResults_July30.RDS"))
+boot_results_reload_r1 <- readRDS(here("Analysis/update_data/data/processed/BootResults_Aug_8_run1.RDS"))
+boot_results_reload_r2 <- readRDS(here("Analysis/update_data/data/processed/BootResults_Aug_8_run2.RDS"))
+boot_results_reload_r3 <- readRDS(here("Analysis/update_data/data/processed/BootResults_Aug_8_run3.RDS"))
+boot_results_reload_r4 <- readRDS(here("Analysis/update_data/data/processed/BootResults_Aug_8_run4.RDS"))
+
+## mortality outcomes
+boot_results_reload_mortality_minority <- readRDS(here("Analysis/update_data/data/processed/total_mortalities_by_minority_boot_results.RDS"))
+boot_results_reload_mortality_pub_trans <- readRDS(here("Analysis/update_data/data/processed/total_mortalities_by_pub_trans_boot_results.RDS"))
+boot_results_reload_mortality_prop_blck_ind <- readRDS(here("Analysis/update_data/data/processed/total_mortalities_by_prop_black_ind_boot_results.RDS"))
+#total case outcomes
+boot_results_reload_cases_minority <- readRDS(here("Analysis/update_data/data/processed/total_cases_by_minority_boot.RDS"))
+boot_results_reload_cases_pub_trans <- readRDS(here("Analysis/update_data/data/processed/total_cases_by_public_trans_boot.RDS"))
+boot_results_reload_cases_black_indvs <- readRDS(here("Analysis/update_data/data/processed/total_cases_by_prop_black_boot_results.RDS"))
+
+
+boot_results_reload_r1 <- joint_impact_day100_deaths
+boot_results_reload_r2 <- no2_impact_day100_deaths
+boot_results_reload_r3 <- mask_impact_day100_deaths
+boot_results_reload_r4 <- prop_black_impact_day100_deaths
+boot_results_reload_r5 <- pm25_impact_day100_deaths
 
 ## create boot dfs for each outcome for each model method
-
-## day first case
 boot_results_list <- list()
-for (i in 1:length(boot_results_reload)) {
+## day first case
+for (i in 1:length(boot_results_reload_r1)) {
   boot_df <- rbind(
-    boot_results_reload[[i]]$full_sl_results$boot_CI_df_sl_full,
-    boot_results_reload[[i]]$no_subcat_sl_results$boot_CI_df_sl_nosubcat,
-    boot_results_reload[[i]]$univar_gam_results$boot_CI_univar_gam
+    boot_results_reload_r1[[i]]$full_sl_results$boot_CI_df_sl_full,
+    boot_results_reload_r1[[i]]$no_subcat_sl_results$boot_CI_df_sl_nosubcat,
+    boot_results_reload_r1[[i]]$univar_gam_results$boot_CI_univar_gam,
+    
+    boot_results_reload_r2[[i]]$full_sl_results$boot_CI_df_sl_full,
+    boot_results_reload_r2[[i]]$no_subcat_sl_results$boot_CI_df_sl_nosubcat,
+    boot_results_reload_r2[[i]]$univar_gam_results$boot_CI_univar_gam,
+    
+    boot_results_reload_r3[[i]]$full_sl_results$boot_CI_df_sl_full,
+    boot_results_reload_r3[[i]]$no_subcat_sl_results$boot_CI_df_sl_nosubcat,
+    boot_results_reload_r3[[i]]$univar_gam_results$boot_CI_univar_gam,
+    
+    boot_results_reload_r4[[i]]$full_sl_results$boot_CI_df_sl_full,
+    boot_results_reload_r4[[i]]$no_subcat_sl_results$boot_CI_df_sl_nosubcat,
+    boot_results_reload_r4[[i]]$univar_gam_results$boot_CI_univar_gam,
+    
+    boot_results_reload_r5[[i]]$full_sl_results$boot_CI_df_sl_full,
+    boot_results_reload_r5[[i]]$no_subcat_sl_results$boot_CI_df_sl_nosubcat,
+    boot_results_reload_r5[[i]]$univar_gam_results$boot_CI_univar_gam
   )
 
   boot_df$model_type <- c(rep("SL_full", length(percents)), rep("SL_no_subcat_vars", length(percents)), rep("univar gam", length(percents)))
@@ -376,11 +412,23 @@ for (i in 1:length(boot_results_reload)) {
 
 names(boot_results_list) <- target_outcomes
 
+aggregate_bootstrap_runs <- function(boot_list){
+  tgt_var <- colnames(boot_list)[1]
+  boot_aggregated <- boot_list %>% 
+  group_by(model_type, !!as.symbol(tgt_var)) %>% 
+  summarize_at(c("Boot Pred", "Boot Low", "Boot High"), mean)
+  
+  return(boot_aggregated)
+}
+
+boot_results_agg_list <- map(.x = boot_results_list,  )
+
+
 plot_bootstrap_results <- function(boot_res,
                                    desc_outcome,
                                    desc_var,
                                    actual_outcome) {
-  # browser()
+  
   target_variable <- names(boot_res)[1]
   title <- as.character(desc_var)
   ylabel <- as.character(desc_outcome)
@@ -444,7 +492,7 @@ actual_outcomes <- c(
 
 
 pmap(list(
-  boot_res = boot_results_list,
+  boot_res = boot_results_agg_list,
   desc_outcome = desc_outcomes,
   desc_var = desc_vars,
   actual_outcome = actual_outcomes
@@ -452,6 +500,81 @@ pmap(list(
 .f = plot_bootstrap_results
 )
 
+## mortalities
+total_mortality_by_mask <- rbind(total_mortalities_by_always_mask_boot_results$full_sl_results$boot_CI_df_sl_full,
+                                     total_mortalities_by_always_mask_boot_results$no_subcat_sl_results$boot_CI_df_sl_nosubcat,
+                                     total_mortalities_by_always_mask_boot_results$univar_gam_results$boot_CI_univar_gam)
+
+total_mortality_by_mask$model_type <- c(rep("SL_full", length(percents)), rep("SL_no_subcat_vars", length(percents)), rep("univar gam", length(percents)))
+
+total_mortality_by_pub_trans <- rbind(boot_results_reload_mortality_pub_trans$full_sl_results$boot_CI_df_sl_full,
+                                      boot_results_reload_mortality_pub_trans$no_subcat_sl_results$boot_CI_df_sl_nosubcat,
+                                      boot_results_reload_mortality_pub_trans$univar_gam_results$boot_CI_univar_gam)
+
+total_mortality_by_pub_trans$model_type <- c(rep("SL_full", length(percents)), rep("SL_no_subcat_vars", length(percents)), rep("univar gam", length(percents)))
+
+total_mortality_by_blck_indvs <- rbind(boot_results_reload_mortality_prop_blck_ind$full_sl_results$boot_CI_df_sl_full,
+                                       boot_results_reload_mortality_prop_blck_ind$no_subcat_sl_results$boot_CI_df_sl_nosubcat,
+                                       boot_results_reload_mortality_prop_blck_ind$univar_gam_results$boot_CI_univar_gam)
+
+total_mortality_by_blck_indvs$model_type <- c(rep("SL_full", length(percents)), rep("SL_no_subcat_vars", length(percents)), rep("univar gam", length(percents)))
+
+## cases
+
+total_cases_by_minority <- rbind(boot_results_reload_cases_minority$full_sl_results$boot_CI_df_sl_full,
+                                 boot_results_reload_cases_minority$no_subcat_sl_results$boot_CI_df_sl_nosubcat,
+                                 boot_results_reload_cases_minority$univar_gam_results$boot_CI_univar_gam)
+
+total_cases_by_minority$model_type <- c(rep("SL_full", length(percents)), rep("SL_no_subcat_vars", length(percents)), rep("univar gam", length(percents)))
+
+total_cases_by_pub_trans <- rbind(boot_results_reload_cases_pub_trans$full_sl_results$boot_CI_df_sl_full,
+                                  boot_results_reload_cases_pub_trans$no_subcat_sl_results$boot_CI_df_sl_nosubcat,
+                                  boot_results_reload_cases_pub_trans$univar_gam_results$boot_CI_univar_gam)
+
+total_cases_by_pub_trans$model_type <- c(rep("SL_full", length(percents)), rep("SL_no_subcat_vars", length(percents)), rep("univar gam", length(percents)))
+
+total_cases_by_blck_indvs <- rbind(boot_results_reload_cases_black_indvs$full_sl_results$boot_CI_df_sl_full,
+                                   boot_results_reload_cases_black_indvs$no_subcat_sl_results$boot_CI_df_sl_nosubcat,
+                                   boot_results_reload_cases_black_indvs$univar_gam_results$boot_CI_univar_gam)
+
+total_cases_by_blck_indvs$model_type <- c(rep("SL_full", length(percents)), rep("SL_no_subcat_vars", length(percents)), rep("univar gam", length(percents)))
+
+
+boot_res <- joint_boot_df
+## cases 
+
+plot_bootstrap_results(boot_res = total_cases_by_minority, 
+                       desc_outcome = "Total COVID-19 Cases",
+                       desc_var = "CDC Minority Index Score",
+                       actual_outcome = actual_outcomes[3])
+
+plot_bootstrap_results(boot_res = total_cases_by_pub_trans, 
+                       desc_outcome = "Total COVID-19 Cases",
+                       desc_var = "Public Transit",
+                       actual_outcome = actual_outcomes[3])
+
+plot_bootstrap_results(boot_res = total_cases_by_blck_indvs, 
+                       desc_outcome = "Total COVID-19 Cases",
+                       desc_var = "Proportion Black Individuals",
+                       actual_outcome = actual_outcomes[3])
+
+
+
+## mortalities
+plot_bootstrap_results(boot_res = total_mortality_by_mask, 
+                       desc_outcome = "Total COVID-19 Mortalities",
+                       desc_var = "NYT Mask Survey: Always",
+                       actual_outcome = actual_outcomes[5])
+
+plot_bootstrap_results(boot_res = total_mortality_by_pub_trans, 
+                       desc_outcome = "Total COVID-19 Mortalities",
+                       desc_var = "Public Transit",
+                       actual_outcome = actual_outcomes[5])
+
+plot_bootstrap_results(boot_res = total_mortality_by_blck_indvs, 
+                       desc_outcome = "Total COVID-19 Mortalities",
+                       desc_var = "Proportion Black Individuals",
+                       actual_outcome = actual_outcomes[5])
 
 ##############################################################################################
 ## run linear models through one axis of the 3d arrays of the bootstrap in order to derive coefficients for predictions that look linear:
@@ -459,8 +582,15 @@ pmap(list(
 coef_list_of_lists <- list()
 pval_list_of_lists <- list()
 
-for (i in seq(length(boot_results_reload))) {
-  boot_data <- boot_results_reload[[i]]$no_subcat_sl_results$boot_sl_nosubcat_array
+for (i in seq(length(boot_results_reload_r1))) {
+  
+  boot_data_r1 <- boot_results_reload_r1[[i]]$no_subcat_sl_results$boot_sl_nosubcat_array
+  boot_data_r2 <- boot_results_reload_r2[[i]]$no_subcat_sl_results$boot_sl_nosubcat_array
+  boot_data_r3 <- boot_results_reload_r3[[i]]$no_subcat_sl_results$boot_sl_nosubcat_array
+  boot_data_r4 <- boot_results_reload_r4[[i]]$no_subcat_sl_results$boot_sl_nosubcat_array
+  
+  boot_data <- rbind(boot_data_r1, boot_data_r2, boot_data_r3,boot_data_r4)
+  
   coef_list <- list()
   pval_list <- list()
   names(boot_data) <- percents

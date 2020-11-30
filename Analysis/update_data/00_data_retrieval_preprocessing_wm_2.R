@@ -444,6 +444,6 @@ counties_add_data_political_xwalk_google_mob <- merge(counties_add_data_politica
 
 write.csv(
   counties_add_data_political_xwalk_google_mob,
-  here("Analysis/update_data/data/processed/CountiesMergedData_July_15.csv")
+  here("Analysis/update_data/data/processed/CountiesMergedData_Nov_7.csv")
 )
 

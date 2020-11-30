@@ -3,8 +3,8 @@ r_libdir <- Sys.getenv("R_LIBDIR")
 
 # set user-specific package library
 if (grepl("savio2", Sys.info()["nodename"])) {
-.libPaths(r_libdir)
-Sys.setenv(R_REMOTES_NO_ERRORS_FROM_WARNINGS="true")
+  .libPaths(r_libdir)
+  Sys.setenv(R_REMOTES_NO_ERRORS_FROM_WARNINGS="true")
 }
 
 
@@ -22,15 +22,8 @@ library(data.table)
 library(gbm)
 library(tidyr)
 library(gbm)
+library(xgboost)
 
-
-registerDoFuture()
-plan(multiprocess)
-
-#library(doParallel)
-#ncores <- as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
-#ncores
-#registerDoParallel(2)
 
 `%notin%` <- Negate(`%in%`)
 
@@ -176,47 +169,73 @@ bootstrapCI <- function(target_variable,
   resampled_data <- data_tmp[sample(1:nr, size = nr, replace = TRUE), ]
 
   resampled_data_task <- make_sl3_Task(
-    data = resampled_data,
-    covariates = covars,
-    outcome = outcome,
-    folds = origami::make_folds(resampled_data,
-      fold_fun = folds_vfold, V = 2
+   data = resampled_data,
+   covariates = covars,
+   outcome = outcome,
+   folds = origami::make_folds(resampled_data,
+                               fold_fun = folds_vfold, V = 2
     )
   )
-  ## create another SL task but remove all other variables in the target variable subcategory and only include the target variable
+  # create another SL task but remove all other variables in the target variable subcategory and only include the target variable
   resampled_data_task_no_subcat_covars <- make_sl3_Task(
     data = resampled_data,
     covariates = c(covars[covars %notin% sub_cat_vars], target_variable),
     outcome = outcome,
     folds = origami::make_folds(resampled_data,
-      fold_fun = folds_vfold, V = 2
+                                fold_fun = folds_vfold, V = 2
     )
   )
   
   print("Got past making the initial tasks")
 
-  print("Fitting Learners")
-  
+  print("Fitting GAM")
+
   ## train a univariate gam on the resampled data
-  univar_gam_model <- gam(as.formula(paste(outcome, paste("s(" , target_variable,")", sep = ""), sep = "~")), 
+  univar_gam_model <- gam(as.formula(paste(outcome, paste("s(" , target_variable,")", sep = ""), sep = "~")),
                           data = resampled_data)
-  ## train the superlearner on the resampled data
-  sl_fit_full_resampled <- sl$train(resampled_data_task)
-  sl_fit_nosubcat_resampled <- sl$train(resampled_data_task_no_subcat_covars)
   
+  print("Finished Fitting GAM")
+  # ## train the superlearner on the resampled data
+  # 
+  
+  print("Fitting sample xgboost")
+  data(agaricus.train, package='xgboost')
+  data(agaricus.test, package='xgboost')
+
+  dtrain <- xgb.DMatrix(agaricus.train$data, label = agaricus.train$label)
+  dtest <- xgb.DMatrix(agaricus.test$data, label = agaricus.test$label)
+  watchlist <- list(train = dtrain, eval = dtest)
+
+  ## A simple xgb.train example:
+  param <- list(max_depth = 2, eta = 1, verbose = 3, nthread = 1,
+                objective = "binary:logistic", eval_metric = "auc")
+  bst <- xgb.train(param, dtrain, nrounds = 2, watchlist)
+
+  print("past manual xgboost")
+  
+  print("fitting sl learners")
+  
+  # lrnr_mean <- make_learner(Lrnr_mean)
+  sl_2 <- make_learner(Lrnr_sl, sl$params$learners[c(1,4)])
+  sl_fit_full_resampled <- sl_2$train(resampled_data_task)
+  sl_fit_nosubcat_resampled  <- sl_2$train(resampled_data_task_no_subcat_covars)
+  # 
+  #sl_fit_full_resampled <- sl$train(resampled_data_task)
+  #sl_fit_nosubcat_resampled <- sl$train(resampled_data_task_no_subcat_covars)
+
   print("Got past fitting")
-  
+
 
   ## get the original data and reduce the target variable by perc
   data_resampled_reduced <- data_original
   target_min <- min(data_resampled_reduced[, target_variable])
-  
+
   for(i in 1:nrow(data_resampled_reduced)) {
     if(target_min < data_resampled_reduced[[i, target_variable]])
       data_resampled_reduced[[i, target_variable]] <- data_resampled_reduced[[i, target_variable]] - (data_resampled_reduced[[i, target_variable]] * perc)
-    else { 
+    else {
       data_resampled_reduced[[i, target_variable]] <- target_min
-      }
+    }
   }
 
   resampled_data_reduced_task <- make_sl3_Task(
@@ -231,10 +250,10 @@ bootstrapCI <- function(target_variable,
     covariates = c(covars[covars %notin% sub_cat_vars], target_variable),
     outcome = outcome,
     folds = origami::make_folds(resampled_data,
-      fold_fun = folds_vfold, V = 2
+                                fold_fun = folds_vfold, V = 2
     )
   )
-  
+
   print("Got past making the resampled reduced tasks")
 
   ## predict through superlearner for reduced data on resampled models
@@ -246,12 +265,13 @@ bootstrapCI <- function(target_variable,
 
   results <- data.frame(sl_preds_reduced_full, sl_preds_reduced_no_subcat, as.vector(univariate_gam_predictions))
   colnames(results) <- c("SL_full_model", "SL_no_tgt_subcat_vars", "univariate_gam")
-
+  #results <- mean(rnorm(1e8))
+  
   return(results)
 }
 
 ## run marginal predictions for each decrease in target variable from variable importance calculations
-bootsrap_marginal_predictions <- function(target_variable,
+bootstrap_marginal_predictions <- function(target_variable,
                                           ML_pipeline_result,
                                           outcome,
                                           boot_df_sf_full,
@@ -265,11 +285,11 @@ bootsrap_marginal_predictions <- function(target_variable,
                                           boot_num){
   
   initialize_data <- rep(NaN, dim(data_original)[1] * boot_num * length(percents))
-
+  
   boot_data_array_full_sl <- as.data.frame(matrix(0, ncol = length(percents), nrow = boot_num))
   boot_data_array_full_nosubcat <- as.data.frame(matrix(0, ncol = length(percents), nrow = boot_num))
   boot_data_array_full_univar_gam <- as.data.frame(matrix(0, ncol = length(percents), nrow = boot_num))
-
+  
   for (i in 1:length(percents)) {
     
     perc <- percents[i]
@@ -277,15 +297,15 @@ bootsrap_marginal_predictions <- function(target_variable,
     boot_updates <- foreach(this_iter = seq_len(boot_num),
                             .options.multicore = list(preschedule = FALSE),
                             .errorhandling = "remove") %dopar%  { 
-      bootstrapCI(
-      target_variable = target_variable,
-      data_original = data_original,
-      ML_pipeline_result = ML_pipeline_result,
-      covars = covars,
-      outcome = outcome,
-      perc = perc,
-      sub_cat_vars = sub_cat_vars)
-    }
+                              bootstrapCI(
+                                target_variable = target_variable,
+                                data_original = data_original,
+                                ML_pipeline_result = ML_pipeline_result,
+                                covars = covars,
+                                outcome = outcome,
+                                perc = perc,
+                                sub_cat_vars = sub_cat_vars)
+                            }
     
     if (outcome == "FirstCaseDay") {
       ## reformat and extract the bootstrap results
@@ -293,7 +313,7 @@ bootsrap_marginal_predictions <- function(target_variable,
       total_counts_SL_full <- boot_totals$SL_full_model
       total_counts_SL_no_subcat <- boot_totals$SL_no_tgt_subcat_vars
       total_counts_univariate_gam <- boot_totals$univariate_gam
-
+      
       boot_updates_SL_full <- colMeans(do.call(cbind, sapply(boot_updates, "[", 1))) ## wish I didn't have to manually index here but in a hurry
       boot_updates_SL_nosubcat <- colMeans(do.call(cbind, sapply(boot_updates, "[", 2)))
       boot_updates_SL_univar_gam <- colMeans(do.call(cbind, sapply(boot_updates, "[", 3)))
@@ -302,7 +322,7 @@ bootsrap_marginal_predictions <- function(target_variable,
       total_counts_SL_full <- total_totals$SL_full_model
       total_counts_SL_no_subcat <- total_totals$SL_no_tgt_subcat_vars
       total_counts_univariate_gam <- total_totals$univariate_gam
-
+      
       boot_updates_SL_full <- colSums(do.call(cbind, sapply(boot_updates, "[", 1)) * pop)
       boot_updates_SL_nosubcat <- colSums(do.call(cbind, sapply(boot_updates, "[", 2)) * pop)
       boot_updates_SL_univar_gam <- colSums(do.call(cbind, sapply(boot_updates, "[", 3)) * pop)
@@ -310,30 +330,30 @@ bootsrap_marginal_predictions <- function(target_variable,
     boot_data_array_full_sl[, i] <- as.vector(boot_updates_SL_full)
     boot_data_array_full_nosubcat[, i] <- as.vector(boot_updates_SL_nosubcat)
     boot_data_array_full_univar_gam[, i] <- as.vector(boot_updates_SL_univar_gam)
-
+    
     CI_boot_full_sl <- quantile(boot_updates_SL_full, probs = c(0.025, 0.50, 0.975), na.rm = TRUE)
     CI_boot_full_nosubcat <- quantile(boot_updates_SL_nosubcat, probs = c(0.025, 0.50, 0.975), na.rm = TRUE)
     CI_boot_full_univar_gam <- quantile(boot_updates_SL_univar_gam, probs = c(0.025, 0.50, 0.975), na.rm = TRUE)
-
+    
     ## update full sl df
     boot_df_sf_full[i, 1] <- perc
     boot_df_sf_full[i, 2] <- CI_boot_full_sl[[2]]
     boot_df_sf_full[i, 3] <- CI_boot_full_sl[[1]]
     boot_df_sf_full[i, 4] <- CI_boot_full_sl[[3]]
-
+    
     ## update subcat sl df
     boot_df_sf_no_subcat[i, 1] <- perc
     boot_df_sf_no_subcat[i, 2] <- CI_boot_full_nosubcat[[2]]
     boot_df_sf_no_subcat[i, 3] <- CI_boot_full_nosubcat[[1]]
     boot_df_sf_no_subcat[i, 4] <- CI_boot_full_nosubcat[[3]]
-
+    
     ## update univar gam df
     boot_df_univar_gam[i, 1] <- perc
     boot_df_univar_gam[i, 2] <- CI_boot_full_univar_gam[[2]]
     boot_df_univar_gam[i, 3] <- CI_boot_full_univar_gam[[1]]
     boot_df_univar_gam[i, 4] <- CI_boot_full_univar_gam[[3]]
   }
-
+  
   return(list(
     "full_sl_results" = list(
       "boot_CI_df_sl_full" = boot_df_sf_full,
@@ -351,26 +371,55 @@ bootsrap_marginal_predictions <- function(target_variable,
 }
 
 
-start_time <- Sys.time()
+#start_time <- Sys.time()
+library(doParallel)
+ncores <- as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
+ncores
+cl <- makeCluster(ncores)
+registerDoParallel(ncores)
 
-boot_results <- pmap(list(
-  target_variable = top_vars,
-  ML_pipeline_result = ML_pipeline_results,
-  outcome = target_outcomes,
-  boot_df_sf_full = boot_dfs_sl_full,
-  boot_df_sf_no_subcat = boot_dfs_sl_no_subcat,
-  boot_df_univar_gam = boot_dfs_univar_gam,
-  sub_cat_vars = top_var_subcat_vars
-),
-.f = bootsrap_marginal_predictions,
-data_original = data_original,
-covars = covars,
-percents = percents,
-pop = data_original$Population,
-boot_num = 100
-)
-end_time <- Sys.time()
+all_results <-as.list(rep(NA,5))
 
-end_time - start_time
+#for(it in 2:5){
+results <- bootstrap_marginal_predictions(target_variable= top_vars[1],
+                                          ML_pipeline_result =ML_pipeline_results[[1]],
+                                          outcome = target_outcomes[1],
+                                          boot_df_sf_full = boot_dfs_sl_full[1],
+                                          boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[1],
+                                          boot_df_univar_gam = boot_dfs_univar_gam[1],
+                                          sub_cat_vars= top_var_subcat_vars[1],
+                                          data_original = data_original,
+                                          covars = covars,
+                                          percents = percents,
+                                          pop = data_original$Population,
+                                          boot_num=100)
+  #all_results[[it]] <- results
+#}
 
-saveRDS(boot_results, here("Analysis/update_data/data/processed/BootResults_July31.RDS"))
+stopCluster(cl)
+
+#end_time <- Sys.time()
+
+#end_time - start_time
+
+saveRDS(boot_results, here("Analysis/update_data/data/processed/BootResults_Aug_6_run100.RDS"))
+
+
+# boot_results <- pmap(list(
+#   target_variable = top_vars,
+#   ML_pipeline_result = ML_pipeline_results,
+#   outcome = target_outcomes,
+#   boot_df_sf_full = boot_dfs_sl_full,
+#   boot_df_sf_no_subcat = boot_dfs_sl_no_subcat,
+#   boot_df_univar_gam = boot_dfs_univar_gam,
+#   sub_cat_vars = top_var_subcat_vars
+# ),
+# .f = bootsrap_marginal_predictions,
+# data_original = data_original,
+# covars = covars,
+# percents = percents,
+# pop = data_original$Population,
+# boot_num = 100
+# )
+
+

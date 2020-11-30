@@ -1,24 +1,23 @@
-library(sl3)
-library(origami)
-library(dplyr)
-library(knitr)
-library(ggplot2)
-library(here)
-library(R6)
-library(tidyverse)
-library(readxl)
-library(gam)
-library(data.table)
-library(gbm)
-library(tidyr)
-library(gbm)
+  library(sl3)
+  library(origami)
+  library(dplyr)
+  library(knitr)
+  library(ggplot2)
+  library(here)
+  library(R6)
+  library(tidyverse)
+  library(readxl)
+  library(gam)
+  library(data.table)
+  library(gbm)
+  library(tidyr)
 
 ## load parallel
 library(doParallel)
 #cl <- makeCluster(2)
 cl <- as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
 #ncores
-registerDoParallel(cl)
+registerDoParallel(2)
 
 `%notin%` <- Negate(`%in%`)
 
@@ -158,7 +157,7 @@ bootstrapCI <- function(target_variable,
                         sub_cat_vars) {
   
   sl <- ML_pipeline_result$sl_obj
-  
+  print('Got past sl load')
   nr <- nrow(data_original)
   data_tmp <- data_original
   resampled_data <- data_tmp[sample(1:nr, size = nr, replace = TRUE), ]
@@ -172,7 +171,6 @@ bootstrapCI <- function(target_variable,
     )
   )
   ## create another SL task but remove all other variables in the target variable subcategory and only include the target variable
-  # browser()
   resampled_data_task_no_subcat_covars <- make_sl3_Task(
     data = resampled_data,
     covariates = c(covars[covars %notin% sub_cat_vars], target_variable),
@@ -182,13 +180,18 @@ bootstrapCI <- function(target_variable,
     )
   )
   
+  print('Got past creating new tasks')
+  
+  
   ## train a univariate gam on the resampled data
   univar_gam_model <- gam(as.formula(paste(outcome, paste("s(" , target_variable,")", sep = ""), sep = "~")), 
                           data = resampled_data)
-  # browser()
   ## train the superlearner on the resampled data
   sl_fit_full_resampled <- sl$train(resampled_data_task)
   sl_fit_nosubcat_resampled <- sl$train(resampled_data_task_no_subcat_covars)
+  
+  print('Got past training')
+  
   
   ## get the original data and reduce the target variable by perc
   data_resampled_reduced <- data_original
@@ -202,6 +205,7 @@ bootstrapCI <- function(target_variable,
     }
   }
   
+  print('Got past updating percent reduced')
   resampled_data_reduced_task <- make_sl3_Task(
     data = data_resampled_reduced,
     covariates = covars,
@@ -218,12 +222,17 @@ bootstrapCI <- function(target_variable,
     )
   )
   
+  print('Got past updating tasks with percent reduced')
+  
+  
   ## predict through superlearner for reduced data on resampled models
   sl_preds_reduced_full <- sl_fit_full_resampled$predict(resampled_data_reduced_task)
   # predict from no subcategories
   sl_preds_reduced_no_subcat <- sl_fit_nosubcat_resampled$predict(resampled_data_reduced_task_no_subcat_covars)
   # predict from univariate gam
   univariate_gam_predictions <- stats::predict(object = univar_gam_model, newdata = data_resampled_reduced)
+  
+  print('Got past predicting reduced')
   
   results <- data.frame(sl_preds_reduced_full, sl_preds_reduced_no_subcat, as.vector(univariate_gam_predictions))
   colnames(results) <- c("SL_full_model", "SL_no_tgt_subcat_vars", "univariate_gam")
@@ -244,24 +253,16 @@ percents <- percents
 pop <- data_original$Population
 boot_num <- 100
 
-
-
 ## run marginal predictions for each decrease in target variable from variable importance calculations
-
 start_time <- Sys.time()
-
-
 initialize_data <- rep(NaN, dim(data_original)[1] * boot_num * length(percents))
-
 boot_data_array_full_sl <- as.data.frame(matrix(0, ncol = length(percents), nrow = boot_num))
 boot_data_array_full_nosubcat <- as.data.frame(matrix(0, ncol = length(percents), nrow = boot_num))
 boot_data_array_full_univar_gam <- as.data.frame(matrix(0, ncol = length(percents), nrow = boot_num))
 
-
-
 perc <- percents[4]
 
-boot_updates <- foreach(icount(boot_num)) %dopar% { 
+boot_updates <- foreach(1:boot_num) %dopar% { 
   bootstrapCI(
     target_variable = target_variable,
     data_original = data_original,

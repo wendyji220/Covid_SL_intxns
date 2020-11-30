@@ -11,6 +11,7 @@ library(here)
 library(data.table)
 library(readr)
 library(future)
+library(mice)
 plan(multiprocess)
 
 
@@ -19,6 +20,9 @@ scale = FALSE
 
 ## load data
 covid_data_processed <- read_csv(here("Analysis/update_data/data/processed/cleaned_covid_data_final.csv"))
+colnames(covid_data_processed)[which(colnames(covid_data_processed) == "countyFIPS")] <- "FIPS"
+
+covid_data_processed <-covid_data_processed[,-c(8:17)]
 
 ## source the custom learners built for poisson outcomes
 sapply(list.files(path = here("Analysis/poisson_learners"),
@@ -48,7 +52,11 @@ covars <- colnames(covid_data_processed)[-which(names(covid_data_processed) %in%
   "X1", 
   "FIPS",
   "FIPS.1",
-  "county_names"
+  "county_names",
+  "COUNTYFP",
+  "fips",
+  "countyFIPS"
+  
 ))]
 
 varimp_server <- function(fit, loss, fold_number = "validation", type = c("ratio", 
@@ -113,7 +121,14 @@ run_sl3_poisson_lrns <- function(outcome,
     
     data <- cbind(data[, outcome], features_data_scaled)
 
-  } 
+  }
+  
+  if (outcome == "FirstCaseDay") { 
+    outcome_type <- "Poisson"}
+  else{
+    outcome_type <- "Gaussian"
+    covars <-append(covars, "FirstCaseDay") 
+  }
   
   if (cv) {
     
@@ -130,16 +145,8 @@ run_sl3_poisson_lrns <- function(outcome,
     outcome = outcome)
   }
   
-  if (outcome == "FirstCaseDay") { 
-    outcome_type <- "Poisson"}
-  else{
-    outcome_type <- "Gaussian"
-  }
-  
-  
   if (outcome_type == "Poisson") {
     
-  
     ## set up the custom learners and some standard ones as well
     ## set up baseline mean to make sure our other learners are working better than mean
     mean_lrnr <- Lrnr_mean$new()
@@ -181,6 +188,12 @@ run_sl3_poisson_lrns <- function(outcome,
       Lrnr_david_glmnet_pois_50,
       Lrnr_david_glmnet_pois_75) #Lrnr_david_earth_pois isn't working and leave out HAL for time restraints but should try
   } else {
+    
+    ## custom xgboost for poisson outcome with varying parameters (should try grid as well)
+  Lrnr_david_xgboost_pois_850 <- make_learner(Lrnr_david_xgboost_pois, max_depth = 8,  nrounds = 50)
+  Lrnr_david_xgboost_pois_5100 <- make_learner(Lrnr_david_xgboost_pois, max_depth = 5,  nrounds = 100)
+  Lrnr_david_xgboost_pois_10200 <- make_learner(Lrnr_david_xgboost_pois, max_depth = 10,  nrounds = 200)
+  
   # choose base learners
   lrnr_glm <- make_learner(Lrnr_glm)
   lrnr_mean <- make_learner(Lrnr_mean)
@@ -218,7 +231,11 @@ run_sl3_poisson_lrns <- function(outcome,
     xgb_learners[[40]],
     lrnr_ranger10, 
     xgb_learners[[50]], 
-    xgb_learners[[60]]
+    xgb_learners[[60]], 
+    Lrnr_david_xgboost_pois_850,
+    Lrnr_david_xgboost_pois_5100,
+    Lrnr_david_xgboost_pois_10200
+    
   )
   }
   
@@ -248,7 +265,7 @@ ML_pipeline_output <- purrr::map(.x = outcomes[5:length(outcomes)],
                           all_outcomes = outcomes)
 proc.time() - ptm
 
-saveRDS(ML_pipeline_output, here("Analysis/update_data/data/processed/ML_pipeline_5_outcomes_noscale_july16.RDS"))
+saveRDS(ML_pipeline_output, here("Analysis/update_data/data/processed/ML_pipeline_6_outcomes_noscale_Nov8.RDS"))
 
 plot_variable_importance <- function(input_df, plot_label, save_label){
  

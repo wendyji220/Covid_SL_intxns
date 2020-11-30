@@ -14,7 +14,7 @@ census_data_rename <- FALSE
 
 
 # Changed to CountiesMergedData_July_10.csv
-covid_data_unprocessed <- read_csv("Analysis/update_data/data/processed/CountiesMergedData_July_15.csv")
+covid_data_unprocessed <- read_csv("Analysis/update_data/data/processed/CountiesMergedData_Nov_7.csv")
 
 ## remove character values that aren't needed
 covid_data_unprocessed <- covid_data_unprocessed %>% 
@@ -29,6 +29,119 @@ covid_data_unprocessed$Premature.death.raw.value <- covid_data_unprocessed$Prema
 covid_data_unprocessed$HIV.prevalence.raw.value <- covid_data_unprocessed$HIV.prevalence.raw.value / covid_data_unprocessed$Population 
 covid_data_unprocessed$Sexually.transmitted.infections.raw.value <- covid_data_unprocessed$Sexually.transmitted.infections.raw.value / covid_data_unprocessed$Population 
 covid_data_unprocessed$Preventable.hospital.stays.raw.value <- covid_data_unprocessed$Preventable.hospital.stays.raw.value / covid_data_unprocessed$Population 
+
+
+### get the new pollution data
+
+## read in data
+LUR.air.pollution.data <- read.csv(here('Analysis/update_data/data/raw/LUR_pollution_data.csv'))
+LUR.air.pollution.data$year <- as.factor(LUR.air.pollution.data$year)
+LUR.air.pollution.data$pollutant <- as.factor(LUR.air.pollution.data$pollutant)
+
+means.cross.year <- LUR.air.pollution.data %>%
+  group_by(fips,pollutant) %>%
+  summarize(mean_size = mean(pred_wght, na.rm = TRUE))
+
+LUR.air.pull.wide <- means.cross.year %>% 
+  pivot_wider(names_from = pollutant, values_from = mean_size)
+
+mask.use.data <- read.csv(here('Analysis/update_data/data/raw/mask-use-by-county.csv'))
+
+pesticide_data <- read.csv(here('Analysis/update_data/data/raw/EPest_county_estimates_2013_2017_v2.txt'), sep = "\t")
+
+pesticide_data <- pesticide_data %>%
+  rowwise() %>% mutate(kg_avg=mean(c(EPEST_LOW_KG, EPEST_HIGH_KG), na.rm=T)) 
+
+pesticide_data$fips <-paste(pesticide_data$STATE_FIPS_CODE, str_pad(pesticide_data$COUNTY_FIPS_CODE, 3, pad = "0"), sep = "")
+
+pesticide_avgs_by_year <- pesticide_data %>%
+  group_by(fips, COMPOUND) %>%
+  summarize(mean_kg = mean(kg_avg, na.rm = TRUE))
+
+pesticide_avgs_by_year <- pesticide_avgs_by_year %>% 
+  pivot_wider(names_from = COMPOUND, values_from = mean_kg)
+
+pesticide_avgs_by_year <- pesticide_avgs_by_year[, which(colMeans(!is.na(pesticide_avgs_by_year)) > 0.8)]
+
+pesticide_avgs_by_year <- na.interpolation(pesticide_avgs_by_year, option = "spline")
+
+
+arsenic_violations <- read.csv(here('Analysis/update_data/data/raw/SDWIS_As_Violations_County_2006-2017_FINAL.csv'), sep = ",")
+arsenic_violations <- arsenic_violations %>% select(FIPS, Freq)
+colnames(arsenic_violations)[2] <- "water_arsenic_violation_freq"
+
+
+arsenic_lvls <- read.csv(here('Analysis/update_data/data/raw/arsenic_levels.csv'), sep = ",", stringsAsFactors=FALSE)
+arsenic_lvls$Value <- as.numeric(as.character(arsenic_lvls$Value))
+
+arsenic_lvls <- arsenic_lvls %>%
+  group_by(countyFIPS) %>%
+  summarize(avg_arsenic_lvls = mean(Value, na.rm = TRUE))
+
+nitrate_lvls <- read.csv(here('Analysis/update_data/data/raw/nitrate_levels.csv'), sep = ",", stringsAsFactors=FALSE)
+nitrate_lvls$Value <- as.numeric(as.character(nitrate_lvls$Value))
+
+nitrate_lvls <- nitrate_lvls %>%
+  group_by(countyFIPS) %>%
+  summarize(avg_nitrate_lvls = mean(Value, na.rm = TRUE))
+
+
+dehp_lvls <- read.csv(here('Analysis/update_data/data/raw/dehp_levels.csv'), sep = ",", stringsAsFactors=FALSE)
+dehp_lvls$Value <- as.numeric(as.character(dehp_lvls$Value))
+
+dehp_lvls <- dehp_lvls %>%
+  group_by(countyFIPS) %>%
+  summarize(avg_dehp_lvls = mean(Value, na.rm = TRUE))
+
+tce_lvls <- read.csv(here('Analysis/update_data/data/raw/TCE_lvls.csv'), sep = ",", stringsAsFactors=FALSE)
+tce_lvls$Value <- as.numeric(as.character(tce_lvls$Value))
+
+tce_lvls <- tce_lvls %>%
+  group_by(countyFIPS) %>%
+  summarize(avg_tce_lvls = mean(Value, na.rm = TRUE))
+
+atrazine_lvls <- read.csv(here('Analysis/update_data/data/raw/atrazine_levels.csv'), sep = ",", stringsAsFactors=FALSE)
+atrazine_lvls$Value <- as.numeric(as.character(atrazine_lvls$Value))
+
+atrazine_lvls <- atrazine_lvls %>%
+  group_by(countyFIPS) %>%
+  summarize(avg_atrazine_lvls = mean(Value, na.rm = TRUE))
+
+PCE_lvls <- read.csv(here('Analysis/update_data/data/raw/PCE_levels.csv'), sep = ",", stringsAsFactors=FALSE)
+PCE_lvls$Value <- as.numeric(as.character(PCE_lvls$Value))
+
+PCE_lvls <- PCE_lvls %>%
+  group_by(countyFIPS) %>%
+  summarize(avg_pce_lvls = mean(Value, na.rm = TRUE))
+
+tthm_lvls <- read.csv(here('Analysis/update_data/data/raw/tthm_levels.csv'), sep = ",", stringsAsFactors=FALSE)
+tthm_lvls$Value <- as.numeric(as.character(tthm_lvls$Value))
+
+tthm_lvls <- tthm_lvls %>%
+  group_by(countyFIPS) %>%
+  summarize(avg_tthm_lvls = mean(Value, na.rm = TRUE))
+
+covid_data_unprocessed <- merge(LUR.air.pull.wide, covid_data_unprocessed, by.x = "fips", by.y = "FIPS")
+covid_data_unprocessed <- merge(mask.use.data, covid_data_unprocessed, by.x = "COUNTYFP", by.y = "fips")
+covid_data_unprocessed <- merge(pesticide_avgs_by_year, covid_data_unprocessed, by.x = "fips", by.y = "COUNTYFP")
+covid_data_unprocessed <- merge(arsenic_violations, covid_data_unprocessed, by.x = "FIPS", by.y = "fips")
+
+## water quality data
+covid_data_unprocessed <- merge(arsenic_lvls, covid_data_unprocessed, by.x = "countyFIPS", by.y = "FIPS", all.y = TRUE)
+covid_data_unprocessed <- merge(nitrate_lvls, covid_data_unprocessed, by.x = "countyFIPS", by.y = "countyFIPS", all.y = TRUE)
+covid_data_unprocessed <- merge(dehp_lvls, covid_data_unprocessed, by.x = "countyFIPS", by.y = "countyFIPS", all.y = TRUE)
+covid_data_unprocessed <- merge(tce_lvls, covid_data_unprocessed, by.x = "countyFIPS", by.y = "countyFIPS", all.y = TRUE)
+covid_data_unprocessed <- merge(atrazine_lvls, covid_data_unprocessed, by.x = "countyFIPS", by.y = "countyFIPS", all.y = TRUE)
+covid_data_unprocessed <- merge(PCE_lvls, covid_data_unprocessed, by.x = "countyFIPS", by.y = "countyFIPS", all.y = TRUE)
+covid_data_unprocessed <- merge(tthm_lvls, covid_data_unprocessed, by.x = "countyFIPS", by.y = "countyFIPS", all.y = TRUE)
+
+covid_data_unprocessed$avg_arsenic_lvls <- na.interpolation(covid_data_unprocessed$avg_arsenic_lvls, option = "spline")
+covid_data_unprocessed$avg_nitrate_lvls <- na.interpolation(covid_data_unprocessed$avg_nitrate_lvls, option = "spline")
+covid_data_unprocessed$avg_dehp_lvls <- na.interpolation(covid_data_unprocessed$avg_dehp_lvls, option = "spline")
+covid_data_unprocessed$avg_tce_lvls <- na.interpolation(covid_data_unprocessed$avg_tce_lvls, option = "spline")
+covid_data_unprocessed$avg_atrazine_lvls <- na.interpolation(covid_data_unprocessed$avg_atrazine_lvls, option = "spline")
+covid_data_unprocessed$avg_pce_lvls <- na.interpolation(covid_data_unprocessed$avg_pce_lvls, option = "spline")
+covid_data_unprocessed$avg_tthm_lvls <- na.interpolation(covid_data_unprocessed$avg_tthm_lvls, option = "spline")
 
 
 
@@ -101,7 +214,7 @@ outcomes <- c("CountyRelativeDay25Cases",
               "TotalDeathsUpToDate", 
               "FirstCaseDay")
 
-outcome_data <- covid_data_processed[,c(outcomes, "FIPS")]
+outcome_data <- covid_data_processed[,c(outcomes, "countyFIPS")]
 
 ## check for na in outcome data
 list_na <- colnames(outcome_data)[ apply(outcome_data, 2, anyNA) ]
@@ -140,7 +253,7 @@ completeFun <- function(data, desiredCols) {
   return(data[completeVec, ])
 }
 
-final_covid_processed <- merge(outcome_data, final_covid_processed, by = "FIPS")
+final_covid_processed <- merge(outcome_data, final_covid_processed, by = "countyFIPS")
 final_covid_processed <- completeFun(final_covid_processed, outcomes)
 
 ## Column bind the outcome data and write the final dataset

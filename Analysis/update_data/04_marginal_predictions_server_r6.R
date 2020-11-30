@@ -36,7 +36,7 @@ sapply(list.files(
 scale <- FALSE
 ## read in processsed dataframe and load the ML pipeline results
 data_original <- read_csv(here("Analysis/update_data/data/processed/cleaned_covid_data_final.csv"))
-ML_pipeline_results <- readRDS(here("Analysis/update_data/data/processed/ML_pipeline_5_outcomes_noscale_july16.RDS")) ### MAKE SURE TO CHANGE THIS AS UPDATED!
+ML_pipeline_results <- readRDS(here("Analysis/update_data/data/processed/ML_pipeline_6_outcomes_noscale_Nov8.RDS")) ### MAKE SURE TO CHANGE THIS AS UPDATED!
 
 ## read in data dictionary for identifying subgroups of top variables to isolate the different control conditions
 Data_Dictionary <- read_excel(here("Analysis/update_data/data/processed/Data_Dictionary.xlsx"))
@@ -53,7 +53,7 @@ vars_rmv_na <- as.vector(vars_rmv_na$x)
 
 removing <- c(
   vars_rmv_na,
-  "FIPS",
+  "countyFIPS",
   "CountyRelativeDay25Cases",
   "TotalCasesUpToDate",
   "USRelativeDay100Deaths",
@@ -101,7 +101,8 @@ covars <- colnames(data_original)[-which(names(data_original) %in% c(
   "X1",
   "FIPS",
   "FIPS.1",
-  "county_names"
+  "county_names",
+  "countyFIPS"
 ))]
 
 ## doing this outside the map function so it doesn't scale everytime, just need to do it once
@@ -123,6 +124,7 @@ top_vars <- unlist(purrr::map(
   .f = get_top_variables
 ))
 
+top_vars[4] <- "no2"
 ## get the top variables, their subcategories, and accompanying variables in same category for marginal predictions
 top_var_subgroups <- subcategory_list[match(top_vars, variable_list)]
 top_var_subcat_vars <- purrr::map(.x = top_var_subgroups, ~ variable_list[subcategory_list %in% .x])
@@ -163,6 +165,7 @@ bootstrapCI <- function(target_variable,
                         sub_cat_vars) {
   
   sl <- ML_pipeline_result$sl_obj
+  browser()
   
   nr <- nrow(data_original)
   data_tmp <- data_original
@@ -258,6 +261,8 @@ bootstrap_marginal_predictions <- function(target_variable,
                                            pop,
                                            boot_num){
   
+  browser()
+  
   initialize_data <- rep(NaN, dim(data_original)[1] * boot_num * length(percents))
   
   boot_data_array_full_sl <- as.data.frame(matrix(0, ncol = length(percents), nrow = boot_num))
@@ -268,19 +273,31 @@ bootstrap_marginal_predictions <- function(target_variable,
     
     perc <- percents[i]
     
-    boot_updates <- foreach(this_iter = seq_len(boot_num),
-                            .options.multicore = list(preschedule = FALSE),
-                            .errorhandling = "remove") %dopar%  { 
-                              bootstrapCI(
-                                target_variable = target_variable,
-                                data_original = data_original,
-                                ML_pipeline_result = ML_pipeline_result,
-                                covars = covars,
-                                outcome = outcome,
-                                perc = perc,
-                                sub_cat_vars = sub_cat_vars)
-                            }
+    # boot_updates <- foreach(this_iter = seq_len(boot_num),
+    #                         .options.multicore = list(preschedule = FALSE),
+    #                         .errorhandling = "remove") %dopar%  { 
+    #                           bootstrapCI(
+    #                             target_variable = target_variable,
+    #                             data_original = data_original,
+    #                             ML_pipeline_result = ML_pipeline_result,
+    #                             covars = covars,
+    #                             outcome = outcome,
+    #                             perc = perc,
+    #                             sub_cat_vars = sub_cat_vars)
+    #                         }
+    # 
     
+    boot_updates <- replicate(boot_num, bootstrapCI(
+      target_variable = target_variable,
+      data_original = data_original,
+      ML_pipeline_result = ML_pipeline_result,
+      covars = covars,
+      outcome = outcome,
+      perc = perc,
+      sub_cat_vars = sub_cat_vars
+    ), simplify = FALSE)
+    
+
     if (outcome == "FirstCaseDay") {
       ## reformat and extract the bootstrap results
       boot_totals <- as.data.frame(t(colMeans(bind_rows(boot_updates))))
@@ -373,18 +390,19 @@ start_time <- Sys.time()
 # boot_num = 100
 # )
 
-total_mortalities_by_prop_black_ind_boot_results <- bootstrap_marginal_predictions(target_variable = "pct_black_only_2018", 
-                                                                             ML_pipeline_result = ML_pipeline_results[[5]],
-                                                                             outcome = target_outcomes[[5]],
-                                                                             boot_df_sf_full = boot_dfs_sl_full[[5]],
-                                                                             boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[5]],
-                                                                             boot_df_univar_gam = boot_dfs_univar_gam[[5]],
-                                                                             sub_cat_vars = top_var_subcat_vars[[5]],
+data_original <- data_original[, -c(8:17)]
+no2_death_100_boot_results <- bootstrap_marginal_predictions(target_variable = "no2", 
+                                                                             ML_pipeline_result = ML_pipeline_results[[4]],
+                                                                             outcome = target_outcomes[[4]],
+                                                                             boot_df_sf_full = boot_dfs_sl_full[[4]],
+                                                                             boot_df_sf_no_subcat = boot_dfs_sl_no_subcat[[4]],
+                                                                             boot_df_univar_gam = boot_dfs_univar_gam[[4]],
+                                                                             sub_cat_vars = top_var_subcat_vars[[4]],
                                                                              data_original = data_original,
                                                                              covars = covars,
                                                                              percents = percents,
                                                                              pop = data_original$Population,
-                                                                             boot_num = 1000)
+                                                                             boot_num = 5)
 
 
 end_time <- Sys.time()

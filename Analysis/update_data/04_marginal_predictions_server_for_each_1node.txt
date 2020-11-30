@@ -1,13 +1,3 @@
-# switch up library path for the slurm monster
-r_libdir <- Sys.getenv("R_LIBDIR")
-
-# set user-specific package library
-if (grepl("savio2", Sys.info()["nodename"])) {
-.libPaths(r_libdir)
-Sys.setenv(R_REMOTES_NO_ERRORS_FROM_WARNINGS="true")
-}
-
-
 library(sl3)
 library(origami)
 library(dplyr)
@@ -24,13 +14,10 @@ library(tidyr)
 library(gbm)
 
 
-registerDoFuture()
-plan(multiprocess)
-
-#library(doParallel)
-#ncores <- as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
-#ncores
-#registerDoParallel(2)
+library(doParallel)
+ncores <- as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
+ncores
+registerDoParallel(ncores)
 
 `%notin%` <- Negate(`%in%`)
 
@@ -168,7 +155,6 @@ bootstrapCI <- function(target_variable,
                         outcome,
                         perc,
                         sub_cat_vars) {
-  
   sl <- ML_pipeline_result$sl_obj
 
   nr <- nrow(data_original)
@@ -184,6 +170,7 @@ bootstrapCI <- function(target_variable,
     )
   )
   ## create another SL task but remove all other variables in the target variable subcategory and only include the target variable
+  # browser()
   resampled_data_task_no_subcat_covars <- make_sl3_Task(
     data = resampled_data,
     covariates = c(covars[covars %notin% sub_cat_vars], target_variable),
@@ -192,23 +179,18 @@ bootstrapCI <- function(target_variable,
       fold_fun = folds_vfold, V = 2
     )
   )
-  
-  print("Got past making the initial tasks")
 
-  print("Fitting Learners")
-  
   ## train a univariate gam on the resampled data
   univar_gam_model <- gam(as.formula(paste(outcome, paste("s(" , target_variable,")", sep = ""), sep = "~")), 
                           data = resampled_data)
+  # browser()
   ## train the superlearner on the resampled data
   sl_fit_full_resampled <- sl$train(resampled_data_task)
   sl_fit_nosubcat_resampled <- sl$train(resampled_data_task_no_subcat_covars)
-  
-  print("Got past fitting")
-  
 
   ## get the original data and reduce the target variable by perc
   data_resampled_reduced <- data_original
+  #browser()
   target_min <- min(data_resampled_reduced[, target_variable])
   
   for(i in 1:nrow(data_resampled_reduced)) {
@@ -234,8 +216,6 @@ bootstrapCI <- function(target_variable,
       fold_fun = folds_vfold, V = 2
     )
   )
-  
-  print("Got past making the resampled reduced tasks")
 
   ## predict through superlearner for reduced data on resampled models
   sl_preds_reduced_full <- sl_fit_full_resampled$predict(resampled_data_reduced_task)
@@ -270,13 +250,16 @@ bootsrap_marginal_predictions <- function(target_variable,
   boot_data_array_full_nosubcat <- as.data.frame(matrix(0, ncol = length(percents), nrow = boot_num))
   boot_data_array_full_univar_gam <- as.data.frame(matrix(0, ncol = length(percents), nrow = boot_num))
 
+  # boot_data_array_full_sl <- array(initialize_data, c(length(percents), dim(data_original)[1], boot_num))
+  # boot_data_array_full_nosubcat <- array(initialize_data, c(length(percents), dim(data_original)[1], boot_num))
+  # boot_data_array_full_univar_gam <- array(initialize_data, c(length(percents), dim(data_original)[1], boot_num))
+
+
   for (i in 1:length(percents)) {
     
     perc <- percents[i]
     
-    boot_updates <- foreach(this_iter = seq_len(boot_num),
-                            .options.multicore = list(preschedule = FALSE),
-                            .errorhandling = "remove") %dopar%  { 
+    boot_updates <- foreach(icount(boot_num)) %dopar% { 
       bootstrapCI(
       target_variable = target_variable,
       data_original = data_original,
@@ -294,6 +277,7 @@ bootsrap_marginal_predictions <- function(target_variable,
       total_counts_SL_no_subcat <- boot_totals$SL_no_tgt_subcat_vars
       total_counts_univariate_gam <- boot_totals$univariate_gam
 
+      # browser()
       boot_updates_SL_full <- colMeans(do.call(cbind, sapply(boot_updates, "[", 1))) ## wish I didn't have to manually index here but in a hurry
       boot_updates_SL_nosubcat <- colMeans(do.call(cbind, sapply(boot_updates, "[", 2)))
       boot_updates_SL_univar_gam <- colMeans(do.call(cbind, sapply(boot_updates, "[", 3)))
@@ -307,6 +291,7 @@ bootsrap_marginal_predictions <- function(target_variable,
       boot_updates_SL_nosubcat <- colSums(do.call(cbind, sapply(boot_updates, "[", 2)) * pop)
       boot_updates_SL_univar_gam <- colSums(do.call(cbind, sapply(boot_updates, "[", 3)) * pop)
     }
+    # browser()
     boot_data_array_full_sl[, i] <- as.vector(boot_updates_SL_full)
     boot_data_array_full_nosubcat[, i] <- as.vector(boot_updates_SL_nosubcat)
     boot_data_array_full_univar_gam[, i] <- as.vector(boot_updates_SL_univar_gam)
@@ -367,7 +352,7 @@ data_original = data_original,
 covars = covars,
 percents = percents,
 pop = data_original$Population,
-boot_num = 100
+boot_num = 3
 )
 end_time <- Sys.time()
 
