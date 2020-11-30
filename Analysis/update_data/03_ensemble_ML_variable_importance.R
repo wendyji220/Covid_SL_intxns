@@ -173,6 +173,11 @@ run_sl3_poisson_lrns <- function(outcome,
     ## custom earth
     #Lrnr_david_earth_pois <- make_learner(Lrnr_david_earth_pois)
     
+    lrnr_ranger100 <- make_learner(Lrnr_ranger, num.trees = 100)
+    lrnr_hal_simple <- make_learner(Lrnr_hal9001, degrees = 1, n_folds = 2)
+    lrnr_gam <- Lrnr_pkg_SuperLearner$new("SL.gam")
+    lrnr_bayesglm <- Lrnr_pkg_SuperLearner$new("SL.bayesglm")
+    
     ## create the stack of learners 
     stack <- make_learner(
       Stack,
@@ -186,7 +191,11 @@ run_sl3_poisson_lrns <- function(outcome,
       Lrnr_david_gbm_pois,
       Lrnr_david_glmnet_pois_25,
       Lrnr_david_glmnet_pois_50,
-      Lrnr_david_glmnet_pois_75) #Lrnr_david_earth_pois isn't working and leave out HAL for time restraints but should try
+      Lrnr_david_glmnet_pois_75,
+      lrnr_ranger100,
+      lrnr_hal_simple,
+      lrnr_gam,
+      lrnr_bayesglm) #Lrnr_david_earth_pois isn't working and leave out HAL for time restraints but should try
   } else {
     
     ## custom xgboost for poisson outcome with varying parameters (should try grid as well)
@@ -204,6 +213,12 @@ run_sl3_poisson_lrns <- function(outcome,
   lrnr_lasso <- make_learner(Lrnr_glmnet) # alpha default is 1
   lrnr_ridge <- make_learner(Lrnr_glmnet, alpha = 0)
   lrnr_elasticnet <- make_learner(Lrnr_glmnet, alpha = .5)
+  
+  # choose base learners
+  lrnr_ranger100 <- make_learner(Lrnr_ranger, num.trees = 100)
+  lrnr_hal_simple <- make_learner(Lrnr_hal9001, degrees = 1, n_folds = 2)
+  lrnr_gam <- Lrnr_pkg_SuperLearner$new("SL.gam")
+  lrnr_bayesglm <- Lrnr_pkg_SuperLearner$new("SL.bayesglm")
   
   #lrnr_bayesglm <- Lrnr_pkg_SuperLearner$new("SL.bayesglm")
   
@@ -224,17 +239,21 @@ run_sl3_poisson_lrns <- function(outcome,
     lrnr_ridge, 
     lrnr_elasticnet, 
     lrnr_lasso, 
-    xgb_learners[[31]], 
-    xgb_learners[[32]], 
-    xgb_learners[[33]],
-    xgb_learners[[34]],
-    xgb_learners[[40]],
+    #xgb_learners[[31]], 
+    #xgb_learners[[32]], 
+    #xgb_learners[[33]],
+    #xgb_learners[[34]],
+    #xgb_learners[[40]],
     lrnr_ranger10, 
-    xgb_learners[[50]], 
-    xgb_learners[[60]], 
-    Lrnr_david_xgboost_pois_850,
-    Lrnr_david_xgboost_pois_5100,
-    Lrnr_david_xgboost_pois_10200
+    #xgb_learners[[50]], 
+    #xgb_learners[[60]], 
+    #Lrnr_david_xgboost_pois_850,
+    #Lrnr_david_xgboost_pois_5100,
+    #Lrnr_david_xgboost_pois_10200
+    lrnr_ranger100,
+    lrnr_hal_simple,
+    lrnr_gam,
+    lrnr_bayesglm
     
   )
   }
@@ -292,10 +311,10 @@ plot_variable_importance <- function(input_df, plot_label, save_label){
 
   }
 
-plot_variable_importance(input_df = ML_pipeline_output[[1]], plot_label = "Day First Case Outcome", save_label = "day_first_case.pdf")
-plot_variable_importance(input_df = ML_pipeline_output[[2]], plot_label = "Cases Rate at Day 25 Outcome", save_label = "day_25_cases.pdf")
-plot_variable_importance(input_df = ML_pipeline_output[[3]], plot_label = "Cases Rate Total To Date Outcome", save_label = "tota_cases_2date.pdf")
-plot_variable_importance(input_df = ML_pipeline_output[[4]], plot_label = "Mortality at Day 100 Rate Outcome", save_label = "day_100_mortality.pdf")
-plot_variable_importance(input_df = ML_pipeline_output[[5]], plot_label = "Mortality Total Rate Outcome", save_label = "total_deaths_2date.pdf")
+#plot_variable_importance(input_df = ML_pipeline_output[[1]], plot_label = "Day First Case Outcome", save_label = "day_first_case.pdf")
+#plot_variable_importance(input_df = ML_pipeline_output[[2]], plot_label = "Cases Rate at Day 25 Outcome", save_label = "day_25_cases.pdf")
+#plot_variable_importance(input_df = ML_pipeline_output[[3]], plot_label = "Cases Rate Total To Date Outcome", save_label = "tota_cases_2date.pdf")
+#plot_variable_importance(input_df = ML_pipeline_output[[4]], plot_label = "Mortality at Day 100 Rate Outcome", save_label = "day_100_mortality.pdf")
+#plot_variable_importance(input_df = ML_pipeline_output[[5]], plot_label = "Mortality Total Rate Outcome", save_label = "total_deaths_2date.pdf")
 
   
