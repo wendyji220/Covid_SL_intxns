@@ -185,8 +185,8 @@ run_sl3_poisson_lrns <- function(outcome,
     
     lrnr_ranger100 <- make_learner(Lrnr_ranger, num.trees = 100)
     lrnr_hal_simple <- make_learner(Lrnr_hal9001, degrees = 1, n_folds = 2)
-    lrnr_gam <- Lrnr_pkg_SuperLearner$new("SL.gam")
-    lrnr_bayesglm <- Lrnr_pkg_SuperLearner$new("SL.bayesglm")
+    lrnr_gam <- make_learner(lrnr_gam)
+    lrnr_polspline <- make_learner(Lrnr_polspline)
     
     ## create the stack of learners 
     stack <- make_learner(
@@ -205,7 +205,7 @@ run_sl3_poisson_lrns <- function(outcome,
       lrnr_ranger100,
       lrnr_hal_simple,
       lrnr_gam,
-      lrnr_bayesglm) #Lrnr_david_earth_pois isn't working and leave out HAL for time restraints but should try
+      lrnr_polspline) #Lrnr_david_earth_pois isn't working and leave out HAL for time restraints but should try
   } else {
     
     ## custom xgboost for poisson outcome with varying parameters (should try grid as well)
@@ -227,8 +227,8 @@ run_sl3_poisson_lrns <- function(outcome,
   # choose base learners
   lrnr_ranger100 <- make_learner(Lrnr_ranger, num.trees = 100)
   lrnr_hal_simple <- make_learner(Lrnr_hal9001, degrees = 1, n_folds = 2)
-  lrnr_gam <- Lrnr_pkg_SuperLearner$new("SL.gam")
-  lrnr_bayesglm <- Lrnr_pkg_SuperLearner$new("SL.bayesglm")
+  lrnr_gam <- make_learner(lrnr_gam)
+  lrnr_polspline <- make_learner(Lrnr_polspline)
   
   #lrnr_bayesglm <- Lrnr_pkg_SuperLearner$new("SL.bayesglm")
   
@@ -263,7 +263,7 @@ run_sl3_poisson_lrns <- function(outcome,
     lrnr_ranger100,
     lrnr_hal_simple,
     lrnr_gam,
-    lrnr_bayesglm
+    lrnr_polspline
     
   )
   }
