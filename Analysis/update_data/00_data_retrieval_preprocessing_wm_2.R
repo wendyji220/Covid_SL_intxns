@@ -1,13 +1,13 @@
 # Adding polygon info for counties to get the centroid
 library(tigris) # using the counties() command
 library(sf)
-
 library(caret)
 library(rvest)
 library(dplyr)
 library(tidyverse)
 library(here)
 library(tidyr)
+library(readxl)
 
 # Download USFacts data
 usf <- data.frame(
@@ -15,6 +15,7 @@ usf <- data.frame(
   read.csv("https://usafactsstatic.blob.core.windows.net/public/data/covid-19/covid_deaths_usafacts.csv")
 )
 
+## FIPS
 usf$fips <- as.integer(usf[, 1])
 
 
@@ -44,27 +45,29 @@ polygons <- polygons[order(polygons$fips), ]
 centroids <- sf::st_coordinates(sf::st_centroid(polygons))
 
 # Initialize counties
-counties <- data.frame(
-  "FIPS" = polygons$fips,
-  "Name" = polygons$NAME,
-  "FirstCaseDay" = NA,
-  "CountyRelativeDay25Cases" = NA,
-  "TotalCasesUpToDate" = 0,
-  "USRelativeDay100Deaths" = 0,
-  "TotalDeathsUpToDate" = 0,
-  "CentroidLat" = centroids[, 2],
-  "CentroidLon" = centroids[, 1],
-  "NearestAirportName" = NA,
-  "NearestAirportDistance" = NA,
-  "NearestAirportEnplanements" = NA,
-  "NearestAirportOver5000000Name" = NA,
-  "NearestAirportOver5000000Distance" = NA,
-  "NearestAirportOver5000000Enplanements" = NA,
-  "Population" = NA,
-  "PublicTransportation" = NA,
-  "GDP" = NA,
-  "AreaLand" = polygons$ALAND,
-  "AreaWater" = polygons$AWATER
+counties=data.frame(
+  "FIPS"=polygons$fips,
+  "Name"=polygons$NAME,
+  "FirstCaseDay"=NA,
+  "CountyRelativeDay100Cases"=NA,
+  "TotalCasesUpToDate"=0,
+  "CountyRelativeDay100Deaths"=0,
+  "TotalDeathsUpToDate"=0,
+  "Deathsat1year" = 0, 
+  "Casesat1year" = 0, 
+  "CentroidLat"=centroids[,2],
+  "CentroidLon"=centroids[,1],
+  "NearestAirportName"=NA,
+  "NearestAirportDistance"=NA,
+  "NearestAirportEnplanements"=NA,
+  "NearestAirportOver5000000Name"=NA,
+  "NearestAirportOver5000000Distance"=NA,
+  "NearestAirportOver5000000Enplanements"=NA,
+  "Population"=NA,
+  "PublicTransportation"=NA,
+  "GDP"=NA,
+  "AreaLand"=polygons$ALAND,
+  "AreaWater"=polygons$AWATER
 )
 
 # Convert cases and deaths data into matrix
@@ -75,15 +78,15 @@ mdeaths <- data.matrix(usf[, (ndays + 10):(2 * ndays + 9)])
 
 # Calculate counties cases and deaths statistics
 for (i in 1:nrow(counties)) {
-  if (any(mcases[i, ] > 0)) {
-    counties$TotalCasesUpToDate[i] <- mcases[i, ndays]
-    counties$TotalDeathsUpToDate[i] <- mdeaths[i, ndays]
-    fc <- min(which(mcases[i, ] > 0))
-    counties$FirstCaseDay[i] <- fc
-    counties$USRelativeDay100Deaths[i] <- mdeaths[i, 100]
-    if (ndays - fc >= 24) {
-      counties$CountyRelativeDay25Cases[i] <- mcases[i, fc + 24]
-    }
+  if (any(mcases[i,]>0)){
+    counties$TotalCasesUpToDate[i]=mcases[i,ndays]
+    counties$TotalDeathsUpToDate[i]=mdeaths[i,ndays]
+    fc=min(which(mcases[i,]>0))
+    counties$FirstCaseDay[i]=fc
+    if (ndays-fc>=100) {counties$CountyRelativeDay100Deaths[i]=mdeaths[i,100]}
+    if (ndays-fc>=100) {counties$CountyRelativeDay100Cases[i]=mcases[i,fc+24]}
+    if (ndays-fc>=365) {counties$Deathsat1year[i]=mdeaths[i,365]}
+    if (ndays-fc>=365) {counties$Casesat1year[i]=mcases[i,365]}
   }
 }
 
@@ -207,28 +210,39 @@ states_fips <- purrr::map(states, function(state) usf$stateFIPS[which(usf$State 
 # NOAA_DIR = dir.create("Analysis/update_data/data/NOAA")
 # NOAA_DIR
 # if (!dir.exists(NOAA_DIR)) {dir.create(NOAA_DIR)}
-for (p in c("tavg", "pcp")) {
-  # Run over months
-  for (m in 1:4) {
-    cn <- sprintf("%s_m%d", p, m)
-    print(cn)
-    counties[cn] <- NA
-    # Run over states
-    for (n in 1:49) {
-      file_name <- sprintf("%s/%s_M%d_ST%d.csv", "Analysis/update_data/data/NOAA", p, m, n)
-      if (!file.exists(file_name)) {
-        url <- sprintf("https://www.ncdc.noaa.gov/cag/county/mapping/%d-%s-20200%d-1.csv", n, p, m)
-        download.file(url, file_name)
-      }
-      noaa <- read.csv(file_name, skip = 3)
-      sfips <- states_fips[states == substr(as.character(noaa$Location.ID[1]), 1, 2)][[1]]
-      fips <- as.integer(substr(as.character(noaa$Location.ID), 4, 6)) + sfips * 1000
-      f <- floor(counties$FIPS / 1000) == sfips
-      counties[cn][f, 1] <- noaa$Value[match(counties$FIPS[f], fips)]
-    }
-  }
-}
+# for (p in c("tavg", "pcp")) {
+#   # Run over months
+#   for (m in 1:4) {
+#     cn <- sprintf("%s_m%d", p, m)
+#     print(cn)
+#     counties[cn] <- NA
+#     # Run over states
+#     for (n in 1:49) {
+#       file_name <- sprintf("%s/%s_M%d_ST%d.csv", here("Analysis/update_data/data/NOAA"), p, m, n)
+#       if (!file.exists(file_name)) {
+#         url <- sprintf("https://www.ncdc.noaa.gov/cag/county/mapping/%d-%s-20200%d-1.csv", n, p, m)
+#         download.file(url, file_name)
+#       }
+#       noaa <- read.csv(file_name, skip = 3)
+#       sfips <- states_fips[states == substr(as.character(noaa$Location.ID[1]), 1, 2)][[1]]
+#       fips <- as.integer(substr(as.character(noaa$Location.ID), 4, 6)) + sfips * 1000
+#       f <- floor(counties$FIPS / 1000) == sfips
+#       counties[cn][f, 1] <- noaa$Value[match(counties$FIPS[f], fips)]
+#     }
+#   }
+# }
 
+## double FIPS 
+counties <- counties[,-128]
+
+###############################################################################################################
+####################### CLIMATE CHANGE DATA ON TEMPERATURE CHANGES OVER YEARS #################################
+###############################################################################################################
+
+temp_lm_models_by_county <- read_excel("Analysis/update_data/data/raw/temp_lm_models_by_county.xlsx")
+
+counties <- merge(counties, 
+                  temp_lm_models_by_county, by.x = "FIPS", by.y = "fips")
 
 
 # Read commuting data
@@ -352,98 +366,151 @@ counties_add_data <- merge(counties_occ, County_Health_Rankings_Data_targets, by
 
 ## political party data
 
-countypres_2000_2016 <- read_csv("Analysis/update_data/data/raw/countypres_2000-2016.csv")
+countypres_2000_2020 <- read_csv("Analysis/update_data/data/raw/countypres_2000-2020.csv")
 
-countypres2016 <- countypres_2000_2016 %>% filter(year == 2016)
+countypres2020 <- countypres_2000_2020 %>% filter(year == 2020)
 
-countypres2016_rep <- countypres2016 %>%
-  group_by(FIPS) %>%
+countypres2020_rep <- countypres2020 %>%
+  group_by(county_fips) %>%
   mutate(rep_ratio = candidatevotes / sum(candidatevotes)) %>%
-  filter(party == "republican")
+  filter(party == "REPUBLICAN")
 
-countypres2016_rep <- countypres2016_rep %>% select(FIPS, rep_ratio)
+countypres2020_rep <- countypres2020_rep %>% select(county_fips, rep_ratio)
 
-counties_add_data_political <- merge(counties_add_data, countypres2016_rep, by = "FIPS")
+countypres2020_rep <- countypres2020_rep %>%
+  group_by(county_fips) %>%
+  dplyr::summarize(rep_ratio = mean(rep_ratio, na.rm=TRUE))
+
+counties_add_data_political <- merge(counties_add_data, countypres2020_rep, by.x= "FIPS", by.y= "county_fips")
+
+write.csv(
+  counties_add_data_political,
+  here("Analysis/update_data/data/processed/CountiesMergedData_Sept_14_2021_no_mobility.csv")
+)
+
+
+##################################################################################
+####################### MOBILITY DATA PROCESSING #################################
+##################################################################################
 
 ## integrate the google mobility data 
 
-# Data 1
-grocery_pharmacy <- read_csv(here("Analysis/Data/Mobility/google-mobility-us-groceryAndPharmacy.csv"))
+# # Data 1
+# grocery_pharmacy <- read_csv(here("Analysis/Data/Mobility/google-mobility-us-groceryAndPharmacy.csv"))
+# 
+# df.1 <- 
+#   grocery_pharmacy %>%
+#   gather(key = date, value = value, -State)
+# df.1$type <- "grocery_pharmacy"
+# 
+# 
+# # Data 2
+# parks <- read_csv(here("Analysis/Data/Mobility/google-mobility-us-parks.csv"))
+# 
+# df.2 <- 
+#   parks %>%
+#   gather(key = date, value = value, -State)
+# df.2$type <- "parks"
+# 
+# 
+# # Data 3
+# residential <- read_csv(here("Analysis/Data/Mobility/google-mobility-us-residential.csv"))
+# 
+# df.3 <- 
+#   residential %>%
+#   gather(key = date, value = value, -State)
+# df.3$type <- "residential"
+# 
+# 
+# # Data 4
+# retailAndRecreation <- read_csv(here("Analysis/Data/Mobility/google-mobility-us-retailAndRecreation.csv"))
+# 
+# df.4 <- 
+#   retailAndRecreation %>%
+#   gather(key = date, value = value, -State)
+# df.4$type <- "retailAndRecreation"
+# 
+# 
+# # Data 5
+# transitStations <- read_csv(here("Analysis/Data/Mobility/google-mobility-us-transitStations.csv"))
+# 
+# df.5 <- 
+#   transitStations %>%
+#   gather(key = date, value = value, -State)
+# df.5$type <- "transitStations"
+# 
+# 
+# # Data 6
+# workplaces <- read_csv(here("Analysis/Data/Mobility/google-mobility-us-workplaces.csv"))
+# 
+# df.6 <- 
+#   workplaces %>%
+#   gather(key = date, value = value, -State)
+# df.6$type <- "workplaces"
+# 
+# mobility_data_long <- rbind(df.1, df.2,df.3,df.4,df.5,df.6)
+# 
 
-df.1 <- 
-  grocery_pharmacy %>%
-  gather(key = date, value = value, -State)
-df.1$type <- "grocery_pharmacy"
+summary_report_US <- read.csv("~/Documents/PhD/covid/GetzHubbard/Analysis/update_data/data/raw/summary_report_US.txt")
 
+summary_report_US$date <- as.Date(summary_report_US$date, "%Y-%m-%d")
 
-# Data 2
-parks <- read_csv(here("Analysis/Data/Mobility/google-mobility-us-parks.csv"))
+summary_report_US <- summary_report_US %>%
+  mutate(month = format(date, "%m"), year = format(date, "%Y"))
 
-df.2 <- 
-  parks %>%
-  gather(key = date, value = value, -State)
-df.2$type <- "parks"
+mobility_data_long <- as.data.frame(summary_report_US)
 
+mobility_data_long <- mobility_data_long %>% drop_na(retail.and.recreation)
+mobility_data_long <- mobility_data_long %>% drop_na(grocery.and.pharmacy)
+mobility_data_long <- mobility_data_long %>% drop_na(driving)
+mobility_data_long <- mobility_data_long %>% drop_na(workplaces)
+mobility_data_long <- mobility_data_long %>% drop_na(residential)
 
-# Data 3
-residential <- read_csv(here("Analysis/Data/Mobility/google-mobility-us-residential.csv"))
+mobility_data_long <- subset(mobility_data_long, select = -c(parks, transit.stations, transit,walking))
 
-df.3 <- 
-  residential %>%
-  gather(key = date, value = value, -State)
-df.3$type <- "residential"
+colnames(mobility_data_long)[which(names(mobility_data_long) == "retail.and.recreation")] <- "mobility_retail_and_recreation"
+colnames(mobility_data_long)[which(names(mobility_data_long) == "grocery.and.pharmacy")] <- "mobility_grocery_and_pharmacy"
+colnames(mobility_data_long)[which(names(mobility_data_long) == "workplaces")] <- "mobility_workplaces"
+colnames(mobility_data_long)[which(names(mobility_data_long) == "residential")] <- "mobility_residential"
+colnames(mobility_data_long)[which(names(mobility_data_long) == "driving")] <- "mobility_driving"
 
-
-# Data 4
-retailAndRecreation <- read_csv(here("Analysis/Data/Mobility/google-mobility-us-retailAndRecreation.csv"))
-
-df.4 <- 
-  retailAndRecreation %>%
-  gather(key = date, value = value, -State)
-df.4$type <- "retailAndRecreation"
-
-
-# Data 5
-transitStations <- read_csv(here("Analysis/Data/Mobility/google-mobility-us-transitStations.csv"))
-
-df.5 <- 
-  transitStations %>%
-  gather(key = date, value = value, -State)
-df.5$type <- "transitStations"
-
-
-# Data 6
-workplaces <- read_csv(here("Analysis/Data/Mobility/google-mobility-us-workplaces.csv"))
-
-df.6 <- 
-  workplaces %>%
-  gather(key = date, value = value, -State)
-df.6$type <- "workplaces"
-
-mobility_data_long <- rbind(df.1, df.2,df.3,df.4,df.5,df.6)
-
-mobility_data_long$date <- as.Date(mobility_data_long$date, "%Y-%m-%d")
-
-mobility_data_long <- as.data.frame(mobility_data_long)
+mobility_data_long <- mobility_data_long %>%
+  pivot_longer(
+    cols = starts_with("mobility_"),
+    names_to = "type",
+    names_prefix = "mobility_",
+    values_to = "value",
+    values_drop_na = TRUE
+  )
 
 google_mobility_coefs <- mobility_data_long %>% 
-  group_by(State, type) %>% 
-  group_modify(~broom::tidy(lm(value ~ date, .))) %>%
+  group_by(state, year, month, type) %>% 
+  group_modify(~broom::tidy(lm(value ~ date, ., na.action=na.exclude))) %>%
   filter(term == "date") %>% 
-  select(State, type, estimate)
+  select(state, month, estimate)
 
 google_mobility_coefs <- spread(google_mobility_coefs, type, estimate)
 
-google_mobility_coefs$State <- state.abb[match(google_mobility_coefs$State,state.name)]
+google_mobility_coefs$date <- as.factor(paste(google_mobility_coefs$month, google_mobility_coefs$year, sep = ""))
+
+google_mobility_coefs <- subset(google_mobility_coefs, select = -c(month, year))
+google_mobility_coefs_panel <- panel_data(google_mobility_coefs, id = state, wave = date)
+
+google_mobility_coefs_wide <- widen_panel(google_mobility_coefs_panel, separator = "_")
+
+# google_mobility_coefs_wide$county_and_city <- gsub(google_mobility_coefs_wide$county_and_city, pattern = " County", replacement = "")
+
+
+google_mobility_coefs_wide$state <- state.abb[match(google_mobility_coefs_wide$state,state.name)]
 
 fips_state_crosswalk <- read_excel("Analysis/update_data/data/processed/fips_state_crosswalk.xlsx")
 
 counties_add_data_political_xwalk <- merge(counties_add_data_political, fips_state_crosswalk, on = "FIPS")
 
-counties_add_data_political_xwalk_google_mob <- merge(counties_add_data_political_xwalk, google_mobility_coefs, on = "State")
+counties_add_data_political_xwalk_google_mob <- merge(counties_add_data_political_xwalk, google_mobility_coefs_wide, by.x = "State", by.y = "state", all.x)
 
 write.csv(
   counties_add_data_political_xwalk_google_mob,
-  here("Analysis/update_data/data/processed/CountiesMergedData_Nov_7.csv")
+  here("Analysis/update_data/data/processed/CountiesMergedData_Sept_14_2021.csv")
 )
 

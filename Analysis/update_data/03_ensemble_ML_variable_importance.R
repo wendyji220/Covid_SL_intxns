@@ -22,17 +22,18 @@ library(data.table)
 library(readr)
 library(future)
 library(mice)
-plan(multiprocess)
+library(future.apply)
+plan(multisession)
 
 
 ## scale data before running ML pipeline? 
 scale = FALSE
 
 ## load data
-covid_data_processed <- read_csv(here("Analysis/update_data/data/processed/cleaned_covid_data_final.csv"))
-colnames(covid_data_processed)[which(colnames(covid_data_processed) == "countyFIPS")] <- "FIPS"
+covid_data_processed <- read_csv(here("Analysis/update_data/data/processed/cleaned_covid_data_final_sept_20_21.csv"))
+covid_data_processed <- covid_data_processed[,-1]
+colnames(covid_data_processed)[which(colnames(covid_data_processed) == "fips")] <- "FIPS"
 
-covid_data_processed <-covid_data_processed[,-c(8:17)]
 
 ## source the custom learners built for poisson outcomes
 sapply(list.files(path = here("Analysis/poisson_learners"),
@@ -40,33 +41,26 @@ sapply(list.files(path = here("Analysis/poisson_learners"),
                   source)
 
 
-covid_data_processed$CountyRelativeDay25Cases_PopScale <- covid_data_processed$CountyRelativeDay25Cases / covid_data_processed$Population 
-covid_data_processed$TotalCasesUpToDate_PopScale <- covid_data_processed$TotalCasesUpToDate / covid_data_processed$Population 
-covid_data_processed$USRelativeDay100Deaths_PopScale <- covid_data_processed$USRelativeDay100Deaths / covid_data_processed$Population 
-covid_data_processed$TotalDeathsUpToDate_PopScale <- covid_data_processed$TotalDeathsUpToDate / covid_data_processed$Population
+covid_data_processed$CountyRelativeDay100Cases <- covid_data_processed$CountyRelativeDay100Cases / covid_data_processed$Population 
+covid_data_processed$TotalCasesUpToDate <- covid_data_processed$TotalCasesUpToDate / covid_data_processed$Population 
+covid_data_processed$CountyRelativeDay100Deaths <- covid_data_processed$CountyRelativeDay100Deaths / covid_data_processed$Population 
+covid_data_processed$TotalDeathsUpToDate <- covid_data_processed$TotalDeathsUpToDate / covid_data_processed$Population
+covid_data_processed$Deathsat1year <- covid_data_processed$Deathsat1year / covid_data_processed$Population
+covid_data_processed$Casesat1year <- covid_data_processed$Casesat1year / covid_data_processed$Population
 
 
-outcomes <- c("CountyRelativeDay25Cases", 
+outcomes <- c("CountyRelativeDay100Cases", 
               "TotalCasesUpToDate", 
-              "USRelativeDay100Deaths" , 
+              "CountyRelativeDay100Deaths" , 
               "TotalDeathsUpToDate", 
-              "FirstCaseDay",
-              "CountyRelativeDay25Cases_PopScale", 
-              "TotalCasesUpToDate_PopScale",
-              "USRelativeDay100Deaths_PopScale",
-              "TotalDeathsUpToDate_PopScale")
+              "Deathsat1year",
+              "Casesat1year")
 
 
 covars <- colnames(covid_data_processed)[-which(names(covid_data_processed) %in% c(
   outcomes,
-  "X1", 
   "FIPS",
-  "FIPS.1",
-  "county_names",
-  "COUNTYFP",
-  "fips",
-  "countyFIPS"
-  
+  "county_names"
 ))]
 
 varimp_server <- function(fit, loss, fold_number = "validation", type = c("ratio", 
@@ -117,96 +111,68 @@ run_sl3_poisson_lrns <- function(outcome,
                                  cv = TRUE, 
                                  all_outcomes = outcomes) {
   
-  if (scale) {
-    
-    #browser()
-    features_data_scaled <- data %>% 
-      select(-c(all_outcomes,
-                "X1", 
-                "FIPS",
-                "FIPS.1",
-                "county_names")) %>% 
-      scale()  %>% 
-      as.data.frame()
-    
-    data <- cbind(data[, outcome], features_data_scaled)
-
-  }
+  # if (scale) {
+  #   
+  #   #browser()
+  #   features_data_scaled <- data %>% 
+  #     select(-c(all_outcomes,
+  #               "X1", 
+  #               "FIPS",
+  #               "FIPS.1",
+  #               "county_names")) %>% 
+  #     scale()  %>% 
+  #     as.data.frame()
+  #   
+  #   data <- cbind(data[, outcome], features_data_scaled)
+  # 
+  # }
   
-  if (outcome == "FirstCaseDay") { 
-    outcome_type <- "Poisson"}
-  else{
-    outcome_type <- "Gaussian"
-    covars <-append(covars, "FirstCaseDay") 
-  }
-  
-  if (cv) {
-    
-    task <- make_sl3_Task(
-    data = data,
-    covariates = covars,
-    outcome = outcome,
-    folds = origami::make_folds(data, fold_fun = folds_vfold, V = 5))
-  } else{
+  # if (outcome == "FirstCaseDay") { 
+  #   outcome_type <- "Poisson"}
+  # else{
+  #   outcome_type <- "Gaussian"
+  #   covars <-append(covars, "FirstCaseDay") 
+  # }
   
   task <- make_sl3_Task(
-    data = data,
-    covariates = covars,
-    outcome = outcome)
-  }
+  data = data,
+  covariates = covars,
+  outcome = outcome,
+  folds = origami::make_folds(data, fold_fun = folds_vfold, V = 10))
   
-  if (outcome_type == "Poisson") {
+  # if (outcome_type == "Poisson") {
     
     ## set up the custom learners and some standard ones as well
     ## set up baseline mean to make sure our other learners are working better than mean
-    mean_lrnr <- Lrnr_mean$new()
-    ## standard poisson GLM I wrote
-    Lrnr_david_pois <- make_learner(Lrnr_david_pois)
-    
-    ## custom xgboost for poisson outcome with varying parameters (should try grid as well)
-    Lrnr_david_xgboost_pois_850 <- make_learner(Lrnr_david_xgboost_pois, max_depth = 8,  nrounds = 50)
-    Lrnr_david_xgboost_pois_5100 <- make_learner(Lrnr_david_xgboost_pois, max_depth = 5,  nrounds = 100)
-    Lrnr_david_xgboost_pois_10200 <- make_learner(Lrnr_david_xgboost_pois, max_depth = 10,  nrounds = 200)
-    
-    ## custom ridge and lass from glmnet poisson
-    ridge_lrnr_pois <- make_learner(Lrnr_david_glmnet_pois,alpha = 0, nfolds = 3)
-    lasso_lrnr_pois <- make_learner(Lrnr_david_glmnet_pois,alpha = 1, nfolds = 3)
-    
-    ## custom gbm and glmnet for poisson with varying parameters
-    Lrnr_david_gbm_pois <- make_learner(Lrnr_david_gbm_pois)
-    Lrnr_david_glmnet_pois_25 <- make_learner(Lrnr_david_glmnet_pois, alpha = 0.25, nfolds = 3)
-    Lrnr_david_glmnet_pois_50 <- make_learner(Lrnr_david_glmnet_pois, alpha = 0.50, nfolds = 3)
-    Lrnr_david_glmnet_pois_75 <- make_learner(Lrnr_david_glmnet_pois, alpha = 0.75, nfolds = 3)
-    
-    ## custom HAL
-    Lrnr_david_hal9001_pois <- make_learner(Lrnr_david_hal9001_pois)
-    ## custom earth
-    #Lrnr_david_earth_pois <- make_learner(Lrnr_david_earth_pois)
-    
-    lrnr_ranger100 <- make_learner(Lrnr_ranger, num.trees = 100)
-    lrnr_hal_simple <- make_learner(Lrnr_hal9001, degrees = 1, n_folds = 2)
-    lrnr_gam <- make_learner(lrnr_gam)
-    lrnr_polspline <- make_learner(Lrnr_polspline)
+  mean_lrnr <- Lrnr_mean$new()
+  ## standard poisson GLM I wrote
+  Lrnr_david_pois <- make_learner(Lrnr_david_pois)
+  
+  ## custom xgboost for poisson outcome with varying parameters (should try grid as well)
+  Lrnr_david_xgboost_pois_850 <- make_learner(Lrnr_david_xgboost_pois, max_depth = 8,  nrounds = 50)
+  Lrnr_david_xgboost_pois_5100 <- make_learner(Lrnr_david_xgboost_pois, max_depth = 5,  nrounds = 100)
+  Lrnr_david_xgboost_pois_10200 <- make_learner(Lrnr_david_xgboost_pois, max_depth = 10,  nrounds = 200)
+  
+  ## custom ridge and lass from glmnet poisson
+  ridge_lrnr_pois <- make_learner(Lrnr_david_glmnet_pois,alpha = 0, nfolds = 10)
+  lasso_lrnr_pois <- make_learner(Lrnr_david_glmnet_pois,alpha = 1, nfolds = 10)
+  
+  ## custom gbm and glmnet for poisson with varying parameters
+  Lrnr_david_gbm_pois <- make_learner(Lrnr_david_gbm_pois)
+  Lrnr_david_glmnet_pois_25 <- make_learner(Lrnr_david_glmnet_pois, alpha = 0.25, nfolds = 3)
+  Lrnr_david_glmnet_pois_50 <- make_learner(Lrnr_david_glmnet_pois, alpha = 0.50, nfolds = 3)
+  Lrnr_david_glmnet_pois_75 <- make_learner(Lrnr_david_glmnet_pois, alpha = 0.75, nfolds = 3)
+  
+  ## custom HAL
+  # Lrnr_david_hal9001_pois <- make_learner(Lrnr_david_hal9001_pois)
+  ## custom earth
+  #Lrnr_david_earth_pois <- make_learner(Lrnr_david_earth_pois)
+  
+  lrnr_ranger100 <- make_learner(Lrnr_ranger, num.trees = 100)
+  lrnr_gam <- make_learner(Lrnr_gam)
+  lrnr_polspline <- make_learner(Lrnr_polspline)
     
     ## create the stack of learners 
-    stack <- make_learner(
-      Stack,
-      mean_lrnr,
-      #Lrnr_david_pois,
-      #Lrnr_david_xgboost_pois_850,
-      #Lrnr_david_xgboost_pois_5100,
-      #Lrnr_david_xgboost_pois_10200,
-      ridge_lrnr_pois,
-      lasso_lrnr_pois,
-      Lrnr_david_gbm_pois,
-      Lrnr_david_glmnet_pois_25,
-      Lrnr_david_glmnet_pois_50,
-      Lrnr_david_glmnet_pois_75,
-      lrnr_ranger100,
-      lrnr_hal_simple,
-      lrnr_gam,
-      lrnr_polspline) #Lrnr_david_earth_pois isn't working and leave out HAL for time restraints but should try
-  } else {
     
     ## custom xgboost for poisson outcome with varying parameters (should try grid as well)
   Lrnr_david_xgboost_pois_850 <- make_learner(Lrnr_david_xgboost_pois, max_depth = 8,  nrounds = 50)
@@ -215,8 +181,7 @@ run_sl3_poisson_lrns <- function(outcome,
   
   # choose base learners
   lrnr_glm <- make_learner(Lrnr_glm)
-  lrnr_mean <- make_learner(Lrnr_mean)
-  
+
   lrnr_ranger10 <- make_learner(Lrnr_ranger, num.trees = 10)
   lrnr_ranger50 <- make_learner(Lrnr_ranger, num.trees = 50)
   lrnr_hal_simple <- make_learner(Lrnr_hal9001, max_degree = 2, n_folds = 2)
@@ -226,10 +191,12 @@ run_sl3_poisson_lrns <- function(outcome,
   
   # choose base learners
   lrnr_ranger100 <- make_learner(Lrnr_ranger, num.trees = 100)
-  lrnr_hal_simple <- make_learner(Lrnr_hal9001, degrees = 1, n_folds = 2)
-  lrnr_gam <- make_learner(lrnr_gam)
-  lrnr_polspline <- make_learner(Lrnr_polspline)
+  lrnr_ranger200 <- make_learner(Lrnr_ranger, num.trees = 200)
+  lrnr_ranger300 <- make_learner(Lrnr_ranger, num.trees = 300)
+  lrnr_ranger400 <- make_learner(Lrnr_ranger, num.trees = 400)
+  lrnr_ranger500 <- make_learner(Lrnr_ranger, num.trees = 500)
   
+
   #lrnr_bayesglm <- Lrnr_pkg_SuperLearner$new("SL.bayesglm")
   
   # I like to crock pot my super learners
@@ -241,39 +208,82 @@ run_sl3_poisson_lrns <- function(outcome,
   xgb_learners <- apply(grid, MARGIN = 1, function(params_tune) {
     do.call(Lrnr_xgboost$new, c(params_default, as.list(params_tune)))})
   
+  full_lrn_earth_1 <- Lrnr_earth$new(degree = 1)
+  full_lrn_earth_2 <- Lrnr_earth$new(degree = 2)
+  full_lrn_earth_3 <- Lrnr_earth$new(degree = 3)
+  full_lrn_earth_4 <- Lrnr_earth$new(degree = 4)
+  
+  full_lrn_poly_1 <- Lrnr_polspline$new(knots = 1)
+  full_lrn_poly_2 <- Lrnr_polspline$new(knots = 2)
+  full_lrn_poly_3 <- Lrnr_polspline$new(knots = 3)
+  full_lrn_poly_4 <- Lrnr_polspline$new(knots = 4)
+  full_lrn_poly_5 <- Lrnr_polspline$new(knots = 5)
+  full_lrn_poly_6 <- Lrnr_polspline$new(knots = 6)
+  full_lrn_poly_7 <- Lrnr_polspline$new(knots = 7)
+  
+  
   
   stack <- make_learner(
     Stack,
-    lrnr_glm, 
-    lrnr_mean, 
-    lrnr_ridge, 
-    lrnr_elasticnet, 
-    lrnr_lasso, 
-    #xgb_learners[[31]], 
-    #xgb_learners[[32]], 
-    #xgb_learners[[33]],
-    #xgb_learners[[34]],
-    #xgb_learners[[40]],
-    lrnr_ranger10, 
-    #xgb_learners[[50]], 
-    #xgb_learners[[60]], 
-    #Lrnr_david_xgboost_pois_850,
-    #Lrnr_david_xgboost_pois_5100,
-    #Lrnr_david_xgboost_pois_10200
-    lrnr_ranger100,
-    lrnr_hal_simple,
+    mean_lrnr,
+    Lrnr_david_pois,
+    Lrnr_david_xgboost_pois_850,
+    Lrnr_david_xgboost_pois_5100,
+    Lrnr_david_xgboost_pois_10200,
+    ridge_lrnr_pois,
+    lasso_lrnr_pois,
+    Lrnr_david_gbm_pois,
+    Lrnr_david_glmnet_pois_25,
+    Lrnr_david_glmnet_pois_50,
+    Lrnr_david_glmnet_pois_75,
     lrnr_gam,
-    lrnr_polspline
-    
+    lrnr_polspline,
+    Lrnr_david_xgboost_pois_850,
+    Lrnr_david_xgboost_pois_5100,
+    Lrnr_david_xgboost_pois_10200,
+    lrnr_glm,
+    lrnr_ranger10,
+    lrnr_ranger50,
+    lrnr_ranger100,
+    lrnr_ranger200,
+    lrnr_ranger300,
+    lrnr_ranger400,
+    lrnr_ranger500,
+    lrnr_lasso,
+    lrnr_ridge,
+    lrnr_elasticnet,
+    lrnr_ranger100,
+    xgb_learners[[31]], 
+    xgb_learners[[32]], 
+    xgb_learners[[33]],
+    xgb_learners[[34]],
+    xgb_learners[[40]],
+    lrnr_ranger10, 
+    xgb_learners[[50]], 
+    xgb_learners[[60]], 
+    full_lrn_earth_1,
+    full_lrn_earth_2,
+    full_lrn_earth_3,
+    full_lrn_earth_4,
+    full_lrn_poly_1,
+    full_lrn_poly_2,
+    full_lrn_poly_3,
+    full_lrn_poly_4,
+    full_lrn_poly_5,
+    full_lrn_poly_6,
+    full_lrn_poly_7
   )
-  }
   
   
-  sl <- make_learner(Lrnr_sl,
-                     learners = stack
+  discrete_sl_metalrn <- Lrnr_cv_selector$new()
+  
+  discrete_sl <- Lrnr_sl$new(
+    learners = stack,
+    metalearner = discrete_sl_metalrn
   )
   ## fit the sl3 object
-  sl_fit <- sl$train(task)
+  sl_fit <- discrete_sl$train(task)
+  # best_model <- sl_fit$fit_object$full_fit$learner_fits$Stack$learner_fits$Lrnr_ranger_200_TRUE_none_1$fit_object
   
   ## cross validate across the learners in sl3 object to see how learners perform 
   CVsl <- CV_lrnr_sl(sl_fit, task, loss_squared_error)
@@ -285,7 +295,7 @@ run_sl3_poisson_lrns <- function(outcome,
 }
 
 ptm <- proc.time()
-ML_pipeline_output <- purrr::map(.x = outcomes[5:length(outcomes)], 
+ML_pipeline_output <- purrr::map(.x = outcomes[1:length(outcomes)], 
                           .f = run_sl3_poisson_lrns, 
                           data = covid_data_processed, 
                           covars = covars,
@@ -294,7 +304,7 @@ ML_pipeline_output <- purrr::map(.x = outcomes[5:length(outcomes)],
                           all_outcomes = outcomes)
 proc.time() - ptm
 
-saveRDS(ML_pipeline_output, here("Analysis/update_data/data/processed/ML_pipeline_6_outcomes_noscale_Nov30.RDS"))
+saveRDS(ML_pipeline_output, here("Analysis/update_data/data/processed/ML_pipeline_6_outcomes_noscale_Dec9_sm.RDS"))
 
 plot_variable_importance <- function(input_df, plot_label, save_label){
  

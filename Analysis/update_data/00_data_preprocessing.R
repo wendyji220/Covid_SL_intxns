@@ -40,6 +40,8 @@ counties=data.frame(
   "TotalCasesUpToDate"=0,
   "USRelativeDay100Deaths"=0,
   "TotalDeathsUpToDate"=0,
+  "Deathsat1year" = 0, 
+  "Casesat1year" = 0, 
   "CentroidLat"=centroids[,2],
   "CentroidLon"=centroids[,1],
   "NearestAirportName"=NA,
@@ -56,7 +58,7 @@ counties=data.frame(
 )
 
 # Convert cases and deaths data into matrix
-ndays=ncol(usf)/2-5
+ndays=(ncol(usf)/2)-5
 usf=usf[match(counties$FIPS,usf$fips),]
 mcases<-data.matrix(usf[,6:(5+ndays)])
 mdeaths<-data.matrix(usf[,(ndays+10):(2*ndays+9)])
@@ -69,6 +71,11 @@ for (i in 1:nrow(counties)) {
     fc=min(which(mcases[i,]>0))
     counties$FirstCaseDay[i]=fc
     counties$USRelativeDay100Deaths[i]=mdeaths[i,100]
+    
+    counties$Deathsat1year[i]=mdeaths[i,365]
+    counties$Casesat1year[i]=mcases[i,365]
+    
+    counties$TotalDeathsUpToDate[i]=mdeaths[i,ndays]
     if (ndays-fc>=24) {counties$CountyRelativeDay25Cases[i]=mcases[i,fc+24]}
   }
 }

@@ -209,7 +209,7 @@ plot_variable_importance_for_cat <- function(input_df, plot_label, save_label, t
   dev.off()
   
 }
-ML_pipeline_results <- readRDS(here("Analysis/update_data/data/processed/ML_pipeline_6_outcomes_noscale_Nov8.RDS"))
+ML_pipeline_results <- readRDS(here("Analysis/update_data/data/processed/ML_pipeline_6_outcomes_noscale_Dec9_sm.RDS"))
 Data_Dictionary <- read_excel(here("Analysis/update_data/data/processed/Data_Dictionary.xlsx"))
 Data_Dictionary_Used <- Data_Dictionary %>% filter(Keep == "Yes") %>% select(`Variable Name`, `Sub-Category`)
 
@@ -229,11 +229,11 @@ variable_list <-  Data_Dictionary_Used$`Variable Name`
 subcategory_list <- Data_Dictionary_Used$`Sub-Category`
 
 
-intxn_vars <- c("ALWAYS", "co", "no2",  "o3", "pm10", "pm25", "so2", 
-                "pct_black_only_2018", "EPL_MINRTY", "EPL_AGE65", 
+intxn_vars <- c("NWWI", "ALWAYS", "co", "no2",  "o3", "pm10", "pm25", "so2", 
+                "pct_black_only_2018", "EPL_LIMENG", "EPL_AGE65", 
                 "pct_female_2018","MALATHION", "2,4-D",
                 "prev_2017_all_ages_Diabetes", "prev_2017_all_ages_Hypertension", 
-                "avg_nitrate_lvls")
+                "Income.inequality.raw.value")
 
 lapply(ML_pipeline_results, calculate_model_risk_rsq)
 
@@ -247,7 +247,7 @@ var_imps <- purrr::map(.x = ML_pipeline_results,
     intxn_size = 4,
     type = "ratio")
 
-saveRDS(var_imps, here("Analysis/update_data/data/processed/var_imps.RDS"))
+saveRDS(var_imps, here("Analysis/update_data/data/processed/var_imps_rac_seg.RDS"))
 
 
 
