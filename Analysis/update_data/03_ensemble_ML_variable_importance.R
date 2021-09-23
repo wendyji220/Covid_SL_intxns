@@ -63,53 +63,95 @@ covars <- colnames(covid_data_processed)[-which(names(covid_data_processed) %in%
   "county_names"
 ))]
 
-varimp_server <- function(fit, loss, fold_number = "validation", type = c("ratio", 
-                                                          "difference")) 
+varimp_server <- function(type, 
+                          fit, 
+                          loss, 
+                          fold_number = "validation", 
+                          measure = c("ratio", "difference"), 
+                          data = covid_data_processed) 
 {
-  type <- match.arg(type)
-  task <- fit$training_task
-  dat <- task$data
-  X <- task$nodes$covariates
-  Y <- task$Y
-  preds <- fit$predict_fold(task, fold_number = fold_number)
-  risk <- mean(loss(preds, Y))
-  importance <- lapply(X, function(i) {
-    scrambled_col <- data.table(sample(unlist(dat[, i, with = FALSE]), 
-                                       nrow(dat)))
-    names(scrambled_col) <- i
-    scrambled_col_names <- task$add_columns(scrambled_col)
-    scrambled_col_task <- task$next_in_chain(column_names = scrambled_col_names)
-    scrambled_sl_preds <- fit$predict_fold(scrambled_col_task, 
-                                           fold_number)
-    risk_scrambled <- mean(loss(scrambled_sl_preds, Y))
+
+    task <- fit$training_task
+    dat <- task$data
+    X <- task$nodes$covariates
+    Y <- task$Y
+    preds <- fit$predict_fold(task, fold_number = fold_number)
+    risk <- mean(loss(preds, Y))
+    risk_importance <- future_lapply(X, function(i) {
+      # scrambled_col <- data.table(sample(unlist(dat[, i, with = FALSE]), 
+                                         # nrow(dat)))
+      # names(scrambled_col) <- i
+      # scrambled_col_names <- task$add_columns(scrambled_col)
+      # scrambled_col_task <- task$next_in_chain(column_names = scrambled_col_names)
+      # scrambled_sl_preds <- fit$predict_fold(scrambled_col_task, 
+                                             # fold_number)
+      i_removed_learner <- fit$reparameterize(list(covariates = setdiff(X,x)))
+      i_removed_fit <- i_removed_learner$train(task)
+      i_removed_pred <- i_removed_fit$predict_fold(task, fold_number)
+      no_i_risk <- mean(loss(i_removed_pred, Y))
+      if (type == "ratio") {
+        varimp_metric <- no_i_risk/risk
+      }
+      else if (type == "difference") {
+        varimp_metric <- no_i_risk - risk
+      }
+      return(varimp_metric)
+    })
+    
+    best_estimator <- fit$learner_fits[[which(sl_fit$coefficients == 1)]]
+    
+    quantile_importance <- future_lapply(X, function(i){
+      dat <- fit$training_task$data
+
+      dat_x75 <- dat_x25 <- dat
+      quantile_25 <- quantile(dat[[i]])[2]
+      quantile_75 <- quantile(dat[[i]])[4]
+      
+      dat_x25[[i]] <-  quantile_25
+      dat_x75[[i]] <-  quantile_75
+      
+      task_25 <- make_sl3_Task(
+        data = dat_x25,
+        covariates = covars,
+        outcome = outcome)
+      
+      task_75 <- make_sl3_Task(
+        data = dat_x75,
+        covariates = covars,
+        outcome = outcome)
+      
+      # retrained_25 <- best_estimator$retrain(new_task = task_25)
+      # retrained_predictions_25 <- retrained_25$predict()
+      # 
+      # retrained_75 <- best_estimator$retrain(new_task = task_75)
+      # retrained_predictions_75 <- retrained_75$predict()
+      
+      x_25_predictions <- best_estimator$predict(task = task_25)
+      x_75_predictions <- best_estimator$predict(task = task_75)
+      
+      varimp_metric <- mean(x_75_predictions - x_25_predictions)
+      return(varimp_metric)
+    })
+      
+    names(risk_importance) <- X
+    names(quantile_importance) <- X
+    
     if (type == "ratio") {
-      varimp_metric <- risk_scrambled/risk
+      risk_results <- data.table(X = names(risk_importance), risk_ratio = unlist(risk_importance))
+      risk_results_ordered <- results[order(-results$risk_ratio)]
     }
     else if (type == "difference") {
-      varimp_metric <- risk_scrambled - risk
+      quantile_results <- data.table(X = names(quantile_importance), risk_difference = unlist(quantile_importance))
+      quantile_results_ordered <- quantile_results[order(-results$risk_difference)]
     }
-    return(varimp_metric)
-  })
-  names(importance) <- X
-  if (type == "ratio") {
-    results <- data.table(X = names(importance), risk_ratio = unlist(importance))
-    results_ordered <- results[order(-results$risk_ratio)]
-  }
-  else if (type == "difference") {
-    results <- data.table(X = names(importance), risk_difference = unlist(importance))
-    results_ordered <- results[order(-results$risk_difference)]
-  }
-  return(results_ordered)
+  return(results = list("quantile_results" = risk_results_ordered, "risk_results" = risk_results_ordered))
 }
 
 
 ## use a function to apply task over multiple outcomes 
 run_sl3_poisson_lrns <- function(outcome, 
                                  data, 
-                                 covars, 
-                                 scale = scale, 
-                                 cv = TRUE, 
-                                 all_outcomes = outcomes) {
+                                 covars) {
   
   # if (scale) {
   #   
@@ -283,53 +325,54 @@ run_sl3_poisson_lrns <- function(outcome,
   )
   ## fit the sl3 object
   sl_fit <- discrete_sl$train(task)
+  
   # best_model <- sl_fit$fit_object$full_fit$learner_fits$Stack$learner_fits$Lrnr_ranger_200_TRUE_none_1$fit_object
   
   ## cross validate across the learners in sl3 object to see how learners perform 
-  CVsl <- CV_lrnr_sl(sl_fit, task, loss_squared_error)
+  # CVsl <- CV_lrnr_sl(sl_fit, task, loss_squared_error)
   
   ## get variable importance from the sl3 object
-  var_importance <- varimp_server(sl_fit, loss_squared_error, type = "ratio")
+  var_importance <- varimp_server(sl_fit, 
+                                  loss_squared_error, 
+                                  type = "ratio", 
+                                  data = data)
   
-  return(list('fit' = sl_fit, 'sl_obj' = sl, 'cv_fit' = CVsl, 'var_imp' = var_importance))
+  return(list('fit' = sl_fit, 'var_imp' = var_importance))
 }
 
 ptm <- proc.time()
 ML_pipeline_output <- purrr::map(.x = outcomes[1:length(outcomes)], 
                           .f = run_sl3_poisson_lrns, 
                           data = covid_data_processed, 
-                          covars = covars,
-                          scale = FALSE,
-                          cv = TRUE,
-                          all_outcomes = outcomes)
+                          covars = covars)
 proc.time() - ptm
 
-saveRDS(ML_pipeline_output, here("Analysis/update_data/data/processed/ML_pipeline_6_outcomes_noscale_Dec9_sm.RDS"))
+saveRDS(ML_pipeline_output, here("Analysis/update_data/data/processed/ML_pipeline_092321.RDS"))
 
-plot_variable_importance <- function(input_df, plot_label, save_label){
- 
-  var_importance <- as.data.frame(input_df$var_imp)
-  colnames(var_importance) <- c("County_Features", "Risk_Ratio")
-  
-  var_importance$County_Features <- as.factor(var_importance$County_Features)
-  var_importance$County_Features <- factor(var_importance$County_Features, levels = var_importance$County_Features[order(var_importance$Risk_Ratio)])
-  
-  pdf(paste(here("Visulizations/var_imp/"),save_label , sep = ""))
-  
-  var_imp_plot <- var_importance %>%
-    filter(Risk_Ratio > 1.01)  %>%
-    ggplot(aes(x = County_Features, y = Risk_Ratio)) +
-    geom_dotplot(binaxis = "y", dotsize = 0.25) +
-    labs(x = "County Level Feature", y = "Risk Ratio", 
-         title = plot_label) + 
-    coord_flip() +
-    theme_bw()
-  
-  print(var_imp_plot)
-  
-  dev.off()
-
-  }
+# plot_variable_importance <- function(input_df, plot_label, save_label){
+#  
+#   var_importance <- as.data.frame(input_df$var_imp)
+#   colnames(var_importance) <- c("County_Features", "Risk_Ratio")
+#   
+#   var_importance$County_Features <- as.factor(var_importance$County_Features)
+#   var_importance$County_Features <- factor(var_importance$County_Features, levels = var_importance$County_Features[order(var_importance$Risk_Ratio)])
+#   
+#   pdf(paste(here("Visulizations/var_imp/"),save_label , sep = ""))
+#   
+#   var_imp_plot <- var_importance %>%
+#     filter(Risk_Ratio > 1.01)  %>%
+#     ggplot(aes(x = County_Features, y = Risk_Ratio)) +
+#     geom_dotplot(binaxis = "y", dotsize = 0.25) +
+#     labs(x = "County Level Feature", y = "Risk Ratio", 
+#          title = plot_label) + 
+#     coord_flip() +
+#     theme_bw()
+#   
+#   print(var_imp_plot)
+#   
+#   dev.off()
+# 
+#   }
 
 #plot_variable_importance(input_df = ML_pipeline_output[[1]], plot_label = "Day First Case Outcome", save_label = "day_first_case.pdf")
 #plot_variable_importance(input_df = ML_pipeline_output[[2]], plot_label = "Cases Rate at Day 25 Outcome", save_label = "day_25_cases.pdf")
