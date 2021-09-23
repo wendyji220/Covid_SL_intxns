@@ -84,7 +84,7 @@ varimp_server <- function(type,
       # scrambled_col_task <- task$next_in_chain(column_names = scrambled_col_names)
       # scrambled_sl_preds <- fit$predict_fold(scrambled_col_task, 
                                              # fold_number)
-      i_removed_learner <- fit$reparameterize(list(covariates = setdiff(X,x)))
+      i_removed_learner <- fit$reparameterize(list(covariates = setdiff(X,i)))
       i_removed_fit <- i_removed_learner$train(task)
       i_removed_pred <- i_removed_fit$predict_fold(task, fold_number)
       no_i_risk <- mean(loss(i_removed_pred, Y))
