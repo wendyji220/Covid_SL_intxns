@@ -1,11 +1,11 @@
-# switch up library path for the slurm monster
-r_libdir <- Sys.getenv("R_LIBDIR")
-
-# set user-specific package library
-if (grepl("savio2", Sys.info()["nodename"])) {
-  .libPaths(r_libdir)
-  Sys.setenv(R_REMOTES_NO_ERRORS_FROM_WARNINGS="true")
-}
+# # switch up library path for the slurm monster
+# r_libdir <- Sys.getenv("R_LIBDIR")
+# 
+# # set user-specific package library
+# if (grepl("savio2", Sys.info()["nodename"])) {
+#   .libPaths(r_libdir)
+#   Sys.setenv(R_REMOTES_NO_ERRORS_FROM_WARNINGS="true")
+# }
 
 
 library(sl3)
