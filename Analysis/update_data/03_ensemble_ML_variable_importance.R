@@ -71,7 +71,7 @@ varimp_server <- function(fit,
                           data = covid_data_processed) 
 {
   
-    best_estimator <- fit$learner_fits[[which(sl_fit$coefficients == 1)]]
+    best_estimator <- fit$learner_fits[[which(fit$coefficients == 1)]]
     task <- fit$training_task
     dat <- task$data
     X <- task$nodes$covariates
