@@ -76,7 +76,7 @@ varimp_server <- function(type,
     Y <- task$Y
     preds <- fit$predict_fold(task, fold_number = fold_number)
     risk <- mean(loss(preds, Y))
-    risk_importance <- future_lapply(X, function(i) {
+    risk_importance <- lapply(X, function(i) {
       # scrambled_col <- data.table(sample(unlist(dat[, i, with = FALSE]), 
                                          # nrow(dat)))
       # names(scrambled_col) <- i
@@ -99,7 +99,7 @@ varimp_server <- function(type,
     
     best_estimator <- fit$learner_fits[[which(sl_fit$coefficients == 1)]]
     
-    quantile_importance <- future_lapply(X, function(i){
+    quantile_importance <- lapply(X, function(i){
       dat <- fit$training_task$data
 
       dat_x75 <- dat_x25 <- dat
