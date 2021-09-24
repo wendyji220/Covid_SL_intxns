@@ -21,6 +21,8 @@ library(here)
 library(data.table)
 library(readr)
 library(future)
+library(foreach)
+
 library(future.apply)
 plan(multisession)
 
@@ -29,7 +31,7 @@ plan(multisession)
 scale = FALSE
 
 ## load data
-covid_data_processed <- read_csv(here("Analysis/update_data/data/processed/cleaned_covid_data_final_sept_20_21.csv"))
+covid_data_processed <- read_csv(here("Analysis/update_data/data/processed/cleaned_covid_data_final_sept_24_21.csv"))
 covid_data_processed <- covid_data_processed[,-1]
 colnames(covid_data_processed)[which(colnames(covid_data_processed) == "fips")] <- "FIPS"
 
@@ -62,21 +64,21 @@ covars <- colnames(covid_data_processed)[-which(names(covid_data_processed) %in%
   "county_names"
 ))]
 
-varimp_server <- function(type, 
-                          fit, 
+varimp_server <- function(fit,
                           loss, 
                           fold_number = "validation", 
                           measure = c("ratio", "difference"), 
                           data = covid_data_processed) 
 {
-
+  
+    best_estimator <- fit$learner_fits[[which(sl_fit$coefficients == 1)]]
     task <- fit$training_task
     dat <- task$data
     X <- task$nodes$covariates
     Y <- task$Y
-    preds <- fit$predict_fold(task, fold_number = fold_number)
+    preds <- best_estimator$predict_fold(task)
     risk <- mean(loss(preds, Y))
-    risk_importance <- lapply(X, function(i) {
+    risk_importance <- foreach(i = X, .combine = 'c') %dopar% {
       # scrambled_col <- data.table(sample(unlist(dat[, i, with = FALSE]), 
                                          # nrow(dat)))
       # names(scrambled_col) <- i
@@ -84,22 +86,17 @@ varimp_server <- function(type,
       # scrambled_col_task <- task$next_in_chain(column_names = scrambled_col_names)
       # scrambled_sl_preds <- fit$predict_fold(scrambled_col_task, 
                                              # fold_number)
-      i_removed_learner <- fit$reparameterize(list(covariates = setdiff(X,i)))
+      i_removed_learner <- best_estimator$reparameterize(list(covariates = setdiff(X,i)))
       i_removed_fit <- i_removed_learner$train(task)
-      i_removed_pred <- i_removed_fit$predict_fold(task, fold_number)
+      i_removed_pred <- i_removed_fit$predict_fold(task)
       no_i_risk <- mean(loss(i_removed_pred, Y))
-      if (type == "ratio") {
-        varimp_metric <- no_i_risk/risk
-      }
-      else if (type == "difference") {
-        varimp_metric <- no_i_risk - risk
-      }
+      varimp_metric <- no_i_risk/risk
+      
       return(varimp_metric)
-    })
+    }
     
-    best_estimator <- fit$learner_fits[[which(sl_fit$coefficients == 1)]]
     
-    quantile_importance <- lapply(X, function(i){
+    quantile_importance <- foreach(i = X, .combine = 'c') %dopar% {
       dat <- fit$training_task$data
 
       dat_x75 <- dat_x25 <- dat
@@ -130,20 +127,18 @@ varimp_server <- function(type,
       
       varimp_metric <- mean(x_75_predictions - x_25_predictions)
       return(varimp_metric)
-    })
+    }
       
     names(risk_importance) <- X
     names(quantile_importance) <- X
     
-    if (type == "ratio") {
-      risk_results <- data.table(X = names(risk_importance), risk_ratio = unlist(risk_importance))
-      risk_results_ordered <- results[order(-results$risk_ratio)]
-    }
-    else if (type == "difference") {
-      quantile_results <- data.table(X = names(quantile_importance), risk_difference = unlist(quantile_importance))
-      quantile_results_ordered <- quantile_results[order(-results$risk_difference)]
-    }
-  return(results = list("quantile_results" = risk_results_ordered, "risk_results" = risk_results_ordered))
+    risk_results <- data.table(X = names(risk_importance), risk_ratio = unlist(risk_importance))
+    risk_results_ordered <- risk_results[order(-risk_results$risk_ratio)]
+   
+    quantile_results <- data.table(X = names(quantile_importance), risk_difference = unlist(quantile_importance))
+    quantile_results_ordered <- quantile_results[order(-quantile_results$risk_difference)]
+  
+  return(results = list("quantile_results" = quantile_results_ordered, "risk_results" = risk_results_ordered))
 }
 
 
@@ -331,22 +326,28 @@ run_sl3_poisson_lrns <- function(outcome,
   # CVsl <- CV_lrnr_sl(sl_fit, task, loss_squared_error)
   
   ## get variable importance from the sl3 object
-  var_importance <- varimp_server(sl_fit, 
-                                  loss_squared_error, 
-                                  type = "ratio", 
+  var_importance <- varimp_server(fit = sl_fit, 
+                                  loss = loss_squared_error, 
+                                  fold_number = "validation",
+                                  measure = "ratio", 
                                   data = data)
+  
+  SL_results <- list('fit' = sl_fit, 'var_imp' = var_importance)
+  
+  saveRDS(SL_results, here(paste("Analysis/update_data/data/processed/",outcome, ".RDS", sep = "")))
+  
   
   return(list('fit' = sl_fit, 'var_imp' = var_importance))
 }
 
 ptm <- proc.time()
-ML_pipeline_output <- purrr::map(.x = outcomes[1:length(outcomes)], 
+ML_pipeline_output <- purrr::walk(.x = outcomes[1:length(outcomes)], 
                           .f = run_sl3_poisson_lrns, 
                           data = covid_data_processed, 
                           covars = covars)
 proc.time() - ptm
 
-saveRDS(ML_pipeline_output, here("Analysis/update_data/data/processed/ML_pipeline_092321.RDS"))
+# saveRDS(ML_pipeline_output, here("Analysis/update_data/data/processed/ML_pipeline_092321.RDS"))
 
 # plot_variable_importance <- function(input_df, plot_label, save_label){
 #  

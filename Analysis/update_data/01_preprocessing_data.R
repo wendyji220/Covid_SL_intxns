@@ -17,7 +17,7 @@ census_data_rename <- FALSE
 
 
 # Changed to CountiesMergedData_July_10.csv
-covid_data_unprocessed <- read_csv("Analysis/update_data/data/processed/covid_data_racial_scores_included.csv")
+covid_data_unprocessed <- read_csv(here("Analysis/update_data/data/processed/covid_data_racial_scores_included.csv"))
 covid_data_unprocessed <- covid_data_unprocessed[,-2]
 ## remove character values that aren't needed
 covid_data_unprocessed <- covid_data_unprocessed %>% 
@@ -72,6 +72,15 @@ lead_risk_score <- lead_risk_score %>%
 lead_risk_score <- lead_risk_score %>% 
   group_by(fips) %>%
   summarise(across(-(c(name, id)), mean, na.rm = TRUE))
+
+##############################################################################################
+############### WATER CONTAMINANT EXPOSURE VARIABLES #########################################
+##############################################################################################
+
+summarized_contaminants_raw <- read_csv(here("Analysis/update_data/data/raw/summarized_contaminants.csv"))
+summarized_contaminants_ratio <- summarized_contaminants_raw[,-1] / summarized_contaminants_raw[[62]]
+summarized_contaminants_ratio <- summarized_contaminants_ratio[-61]
+summarized_contaminants_ratio$fips <- summarized_contaminants_raw$fips
 
 
 ##############################################################################################
@@ -220,7 +229,7 @@ incarceration_trends <- subset(incarceration_trends, select = -c(total_pop,
 covid_data_unprocessed <- merge(LUR.air.pull.wide, covid_data_unprocessed, by.x = "fips", by.y = "FIPS")
 covid_data_unprocessed <- merge(mask.use.data, covid_data_unprocessed, by.x = "COUNTYFP", by.y = "fips")
 covid_data_unprocessed <- merge(lead_risk_score, covid_data_unprocessed, by.x = "fips", by.y = "COUNTYFP")
-
+covid_data_unprocessed <- merge(summarized_contaminants_ratio, covid_data_unprocessed, by.x = "fips", by.y = "fips")
 covid_data_unprocessed <- merge(pesticide_avgs_by_year, covid_data_unprocessed, by.x = "fips", by.y = "fips")
 covid_data_unprocessed <- merge(arsenic_violations, covid_data_unprocessed, by.x = "FIPS", by.y = "fips")
 
@@ -355,7 +364,7 @@ final_covid_processed <- merge(outcome_data, final_covid_processed, by = "fips")
 final_covid_processed <- completeFun(final_covid_processed, outcomes)
 
 ## Column bind the outcome data and write the final dataset
-write.csv(final_covid_processed, file = here("Analysis/update_data/data/processed/cleaned_covid_data_final_sept_20_21.csv"))
+write.csv(final_covid_processed, file = here("Analysis/update_data/data/processed/cleaned_covid_data_final_sept_24_21.csv"))
 
 
 
