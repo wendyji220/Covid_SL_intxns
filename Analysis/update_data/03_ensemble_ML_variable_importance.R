@@ -66,35 +66,33 @@ covars <- colnames(covid_data_processed)[-which(names(covid_data_processed) %in%
 
 varimp_server <- function(fit,
                           loss, 
-                          fold_number = "validation", 
-                          measure = c("ratio", "difference"), 
+                          covars,
+                          outcome,
                           data = covid_data_processed) 
 {
   
-    best_estimator <- fit$learner_fits[[which(fit$coefficients == 1)]]
+    # best_estimator <- fit$learner_fits[[which(fit$coefficients == 1)]]
     task <- fit$training_task
     dat <- task$data
     X <- task$nodes$covariates
     Y <- task$Y
-    preds <- best_estimator$predict_fold(task)
+    preds <- fit$predict_fold(task, fold_number = "validation")
     risk <- mean(loss(preds, Y))
+    
     risk_importance <- foreach(i = X, .combine = 'c') %dopar% {
-      # scrambled_col <- data.table(sample(unlist(dat[, i, with = FALSE]), 
-                                         # nrow(dat)))
-      # names(scrambled_col) <- i
-      # scrambled_col_names <- task$add_columns(scrambled_col)
-      # scrambled_col_task <- task$next_in_chain(column_names = scrambled_col_names)
-      # scrambled_sl_preds <- fit$predict_fold(scrambled_col_task, 
-                                             # fold_number)
-      i_removed_learner <- best_estimator$reparameterize(list(covariates = setdiff(X,i)))
-      i_removed_fit <- i_removed_learner$train(task)
-      i_removed_pred <- i_removed_fit$predict_fold(task)
-      no_i_risk <- mean(loss(i_removed_pred, Y))
+      scrambled_col <- data.table(sample(unlist(dat[, i, with = FALSE]), nrow(dat)))
+      names(scrambled_col) <- i
+      scrambled_col_names <- task$add_columns(scrambled_col)
+      scrambled_col_task <- task$next_in_chain(column_names = scrambled_col_names)
+      scrambled_sl_preds <- fit$predict_fold(scrambled_col_task, fold_number = "validation")
+    #   i_removed_learner <- fit$reparameterize(list(covariates = setdiff(X, i)))
+    #   i_removed_fit <- i_removed_learner$train(task)
+    #   i_removed_pred <- i_removed_fit$predict_fold(task, fold_number = "validation")
+      no_i_risk <- mean(loss(scrambled_sl_preds, Y))
       varimp_metric <- no_i_risk/risk
-      
+    #   
       return(varimp_metric)
     }
-    
     
     quantile_importance <- foreach(i = X, .combine = 'c') %dopar% {
       dat <- fit$training_task$data
@@ -116,14 +114,8 @@ varimp_server <- function(fit,
         covariates = covars,
         outcome = outcome)
       
-      # retrained_25 <- best_estimator$retrain(new_task = task_25)
-      # retrained_predictions_25 <- retrained_25$predict()
-      # 
-      # retrained_75 <- best_estimator$retrain(new_task = task_75)
-      # retrained_predictions_75 <- retrained_75$predict()
-      
-      x_25_predictions <- best_estimator$predict(task = task_25)
-      x_75_predictions <- best_estimator$predict(task = task_75)
+      x_25_predictions <- fit$predict_fold(task = task_25, fold_number = "validation")
+      x_75_predictions <- fit$predict_fold(task = task_75, fold_number = "validation")
       
       varimp_metric <- mean(x_75_predictions - x_25_predictions)
       return(varimp_metric)
@@ -328,8 +320,8 @@ run_sl3_poisson_lrns <- function(outcome,
   ## get variable importance from the sl3 object
   var_importance <- varimp_server(fit = sl_fit, 
                                   loss = loss_squared_error, 
-                                  fold_number = "validation",
-                                  measure = "ratio", 
+                                  covars = covars, 
+                                  outcome = outcome,
                                   data = data)
   
   SL_results <- list('fit' = sl_fit, 'var_imp' = var_importance)
