@@ -21,10 +21,14 @@ library(here)
 library(data.table)
 library(readr)
 library(future)
-library(foreach)
+library(doSNOW)
 
-library(future.apply)
-plan(multisession)
+machines=rep(strsplit(Sys.getenv("SLURM_NODELIST"), ",")[[1]],
+             each = as.numeric(Sys.getenv("SLURM_CPUS_ON_NODE")) )
+
+cl = makeCluster(machines)
+
+registerDoSNOW(cl)
 
 
 ## scale data before running ML pipeline? 
@@ -329,15 +333,20 @@ run_sl3_poisson_lrns <- function(outcome,
   saveRDS(SL_results, here(paste("Analysis/update_data/data/processed/",outcome, ".RDS", sep = "")))
   
   
-  return(list('fit' = sl_fit, 'var_imp' = var_importance))
+  return(list('var_imp' = var_importance))
 }
 
-ptm <- proc.time()
-ML_pipeline_output <- purrr::walk(.x = outcomes[1:length(outcomes)], 
-                          .f = run_sl3_poisson_lrns, 
-                          data = covid_data_processed, 
-                          covars = covars)
-proc.time() - ptm
+print(system.time(out <- foreach(i = outcomes[1:length(outcomes)]) %dopar% {
+  outSub <- run_sl3_poisson_lrns(outcome = i, data = covid_data_processed, covars = covars )
+  outSub # variable importances
+}))
+
+# ptm <- proc.time()
+# ML_pipeline_output <- purrr::walk(.x = outcomes[1:length(outcomes)], 
+#                           .f = run_sl3_poisson_lrns, 
+#                           data = covid_data_processed, 
+#                           covars = covars)
+# proc.time() - ptm
 
 # saveRDS(ML_pipeline_output, here("Analysis/update_data/data/processed/ML_pipeline_092321.RDS"))
 
