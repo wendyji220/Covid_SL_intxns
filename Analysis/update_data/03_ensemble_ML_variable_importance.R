@@ -40,7 +40,7 @@ doParallel::registerDoParallel(nworkers)
 covid_data_processed <- read_csv(here("Analysis/update_data/data/processed/cleaned_covid_data_final_sept_24_21.csv"))
 covid_data_processed <- covid_data_processed[,-1]
 
-Data_Dictionary <- read_excel("Analysis/update_data/data/processed/Data_Dictionary.xlsx")
+Data_Dictionary <- read_excel(here("Analysis/update_data/data/processed/Data_Dictionary.xlsx"))
 Data_Dictionary <- Data_Dictionary[Data_Dictionary$`Variable Name` %in% colnames(covid_data_processed),]
 
 # names(covid_data_processed) <- Data_Dictionary$`Nice Label`[match(names(covid_data_processed), Data_Dictionary$`Variable Name`)]
