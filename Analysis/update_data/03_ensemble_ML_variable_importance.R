@@ -21,7 +21,8 @@ library(here)
 library(data.table)
 library(readr)
 library(future)
-library(doSNOW)
+library(doParallel)
+# library(doSNOW)
 
 # machines=rep(strsplit(Sys.getenv("SLURM_NODELIST"), ",")[[1]],
 #              each = as.numeric(Sys.getenv("SLURM_CPUS_ON_NODE")) )
