@@ -23,22 +23,26 @@ library(readr)
 library(future)
 library(doSNOW)
 
-machines=rep(strsplit(Sys.getenv("SLURM_NODELIST"), ",")[[1]],
-             each = as.numeric(Sys.getenv("SLURM_CPUS_ON_NODE")) )
+# machines=rep(strsplit(Sys.getenv("SLURM_NODELIST"), ",")[[1]],
+#              each = as.numeric(Sys.getenv("SLURM_CPUS_ON_NODE")) )
+# 
+# cl = makeCluster(machines)
+# 
+# registerDoSNOW(cl)
 
-cl = makeCluster(machines)
+nworkers <- as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
+nworkers
+doParallel::registerDoParallel(nworkers)
 
-registerDoSNOW(cl)
-
-
-## scale data before running ML pipeline? 
-scale = FALSE
 
 ## load data
 covid_data_processed <- read_csv(here("Analysis/update_data/data/processed/cleaned_covid_data_final_sept_24_21.csv"))
 covid_data_processed <- covid_data_processed[,-1]
-colnames(covid_data_processed)[which(colnames(covid_data_processed) == "fips")] <- "FIPS"
 
+Data_Dictionary <- read_excel("Analysis/update_data/data/processed/Data_Dictionary.xlsx")
+Data_Dictionary <- Data_Dictionary[Data_Dictionary$`Variable Name` %in% colnames(covid_data_processed),]
+
+# names(covid_data_processed) <- Data_Dictionary$`Nice Label`[match(names(covid_data_processed), Data_Dictionary$`Variable Name`)]
 
 ## source the custom learners built for poisson outcomes
 sapply(list.files(path = here("Analysis/poisson_learners"),
@@ -72,7 +76,9 @@ varimp_server <- function(fit,
                           loss, 
                           covars,
                           outcome,
-                          data = covid_data_processed) 
+                          data = covid_data_processed,
+                          data_dictionary = Data_Dictionary, 
+                          label = label) 
 {
   
     # best_estimator <- fit$learner_fits[[which(fit$coefficients == 1)]]
@@ -133,38 +139,49 @@ varimp_server <- function(fit,
    
     quantile_results <- data.table(X = names(quantile_importance), risk_difference = unlist(quantile_importance))
     quantile_results_ordered <- quantile_results[order(-quantile_results$risk_difference)]
-  
-  return(results = list("quantile_results" = quantile_results_ordered, "risk_results" = risk_results_ordered))
+    
+    merged_results <- merge(risk_importance, quantile_importance, by = "X")
+    merged_results$X<- Data_Dictionary$`Nice Label`[match(merged_results$X, Data_Dictionary$`Variable Name`)]
+    
+    risk_plot <- merged_results %>%
+      arrange(risk_ratio) %>%    # First sort by val. This sort the dataframe but NOT the factor levels
+      filter(risk_ratio > 1.01)  %>%
+      mutate(name=factor(X, levels=X)) %>%   # This trick update the factor levels
+      ggplot( aes(x=name, y=risk_ratio)) +
+      geom_segment( aes(xend=name, yend=1)) +
+      geom_point( size=4, color="orange") +
+      coord_flip() +
+      theme_bw() +
+      ylab("Model Risk Ratio") +
+      xlab("County Feature")
+    
+    quantile_plot <- merged_results %>%
+      arrange(risk_ratio) %>%    # First sort by val. This sort the dataframe but NOT the factor levels
+      filter(risk_ratio > 1.01)  %>%
+      mutate(name=factor(X, levels=X)) %>%   # This trick update the factor levels
+      ggplot( aes(x=name, y=risk_difference)) +
+      geom_segment( aes(xend=name, yend=0)) +
+      geom_point( size=4, color="blue") +
+      coord_flip() +
+      theme_bw() +
+      ylab("Difference between 75th and 25th Quantile") + 
+      xlab("")
+    
+    p <- plot_grid(risk_plot, quantile_plot, labels = label)
+    ggsave(here(paste("Visulizations/New_Varimp/", "varimp_", label, ".png", sep = "")), p)
+
+    
+  return(merged_results)
 }
 
 
 ## use a function to apply task over multiple outcomes 
 run_sl3_poisson_lrns <- function(outcome, 
                                  data, 
-                                 covars) {
+                                 covars,
+                                 data_dictionary, 
+                                 label) {
   
-  # if (scale) {
-  #   
-  #   #browser()
-  #   features_data_scaled <- data %>% 
-  #     select(-c(all_outcomes,
-  #               "X1", 
-  #               "FIPS",
-  #               "FIPS.1",
-  #               "county_names")) %>% 
-  #     scale()  %>% 
-  #     as.data.frame()
-  #   
-  #   data <- cbind(data[, outcome], features_data_scaled)
-  # 
-  # }
-  
-  # if (outcome == "FirstCaseDay") { 
-  #   outcome_type <- "Poisson"}
-  # else{
-  #   outcome_type <- "Gaussian"
-  #   covars <-append(covars, "FirstCaseDay") 
-  # }
   
   task <- make_sl3_Task(
   data = data,
@@ -326,20 +343,27 @@ run_sl3_poisson_lrns <- function(outcome,
                                   loss = loss_squared_error, 
                                   covars = covars, 
                                   outcome = outcome,
-                                  data = data)
+                                  data = data,
+                                  data_dictionary = data_dictionary,
+                                  label = label)
   
   SL_results <- list('fit' = sl_fit, 'var_imp' = var_importance)
   
-  saveRDS(SL_results, here(paste("Analysis/update_data/data/processed/",outcome, ".RDS", sep = "")))
-  
+  saveRDS(SL_results, here(paste("Analysis/update_data/data/processed/", outcome, ".RDS", sep = "")))
   
   return(list('var_imp' = var_importance))
 }
 
-print(system.time(out <- foreach(i = outcomes[1:length(outcomes)]) %dopar% {
-  outSub <- run_sl3_poisson_lrns(outcome = i, data = covid_data_processed, covars = covars )
-  outSub # variable importances
-}))
+# print(system.time(out <- foreach(i = outcomes[1:length(outcomes)]) %dopar% {
+#   outSub <- run_sl3_poisson_lrns(outcome = i, data = covid_data_processed, covars = covars )
+#   outSub # variable importances
+# }))
+
+Deathsat1year <- run_sl3_poisson_lrns(outcome = "Deathsat1year", 
+                                            data = covid_data_processed, 
+                                            covars = covars,
+                                            data_dictionary = Data_Dictionary, 
+                                            label = "COVID Deaths at 1 Year")
 
 # ptm <- proc.time()
 # ML_pipeline_output <- purrr::walk(.x = outcomes[1:length(outcomes)], 
@@ -347,6 +371,15 @@ print(system.time(out <- foreach(i = outcomes[1:length(outcomes)]) %dopar% {
 #                           data = covid_data_processed, 
 #                           covars = covars)
 # proc.time() - ptm
+
+# TotalCasesUpToDate <- readRDS("~/Documents/PhD/covid/Covid_SL_intxns/Covid_SL_intxns/Analysis/update_data/data/processed/TotalCasesUpToDate.RDS")
+# TotalCasesUpToDate_risk <- TotalCasesUpToDate$var_imp$risk_results
+# TotalCasesUpToDate_quantile <- TotalCasesUpToDate$var_imp$quantile_results
+# 
+# 
+
+
+
 
 # saveRDS(ML_pipeline_output, here("Analysis/update_data/data/processed/ML_pipeline_092321.RDS"))
 
@@ -360,14 +393,16 @@ print(system.time(out <- foreach(i = outcomes[1:length(outcomes)]) %dopar% {
 #   
 #   pdf(paste(here("Visulizations/var_imp/"),save_label , sep = ""))
 #   
-#   var_imp_plot <- var_importance %>%
-#     filter(Risk_Ratio > 1.01)  %>%
-#     ggplot(aes(x = County_Features, y = Risk_Ratio)) +
-#     geom_dotplot(binaxis = "y", dotsize = 0.25) +
-#     labs(x = "County Level Feature", y = "Risk Ratio", 
-#          title = plot_label) + 
-#     coord_flip() +
-#     theme_bw()
+  # var_imp_plot <- var_importance %>%
+  #   arrange(mtcars, cyl, disp)
+  # 
+  #   filter(Risk_Ratio > 1.01)  %>%
+  #   ggplot(aes(x = County_Features, y = Risk_Ratio)) +
+  #   geom_dotplot(binaxis = "y", dotsize = 0.25) +
+  #   labs(x = "County Level Feature", y = "Risk Ratio",
+  #        title = plot_label) +
+  #   coord_flip() +
+  #   theme_bw()
 #   
 #   print(var_imp_plot)
 #   
