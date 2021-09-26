@@ -333,7 +333,9 @@ run_sl3_poisson_lrns <- function(outcome,
     metalearner = discrete_sl_metalrn
   )
   ## fit the sl3 object
-  sl_fit <- discrete_sl$train(task)
+  sl_fit <- delayed_learner_train(discrete_sl, task)
+  
+  # sl_fit <- discrete_sl$train(task)
   
   # best_model <- sl_fit$fit_object$full_fit$learner_fits$Stack$learner_fits$Lrnr_ranger_200_TRUE_none_1$fit_object
   
