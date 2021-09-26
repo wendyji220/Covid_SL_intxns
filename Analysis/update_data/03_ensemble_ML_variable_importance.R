@@ -141,7 +141,7 @@ varimp_server <- function(fit,
     quantile_results_ordered <- quantile_results[order(-quantile_results$risk_difference)]
     
     merged_results <- merge(risk_importance, quantile_importance, by = "X")
-    merged_results$X<- Data_Dictionary$`Nice Label`[match(merged_results$X, Data_Dictionary$`Variable Name`)]
+    merged_results$X<- data_dictionary$`Nice Label`[match(merged_results$X, data_dictionary$`Variable Name`)]
     
     risk_plot <- merged_results %>%
       arrange(risk_ratio) %>%    # First sort by val. This sort the dataframe but NOT the factor levels
@@ -356,7 +356,7 @@ run_sl3_poisson_lrns <- function(outcome,
 
 # print(system.time(out <- foreach(i = outcomes[1:length(outcomes)]) %dopar% {
 #   outSub <- run_sl3_poisson_lrns(outcome = i, data = covid_data_processed, covars = covars )
-#   outSub # variable importances
+#   outSub # variable importancesdd
 # }))
 
 Deathsat1year <- run_sl3_poisson_lrns(outcome = "Deathsat1year", 
