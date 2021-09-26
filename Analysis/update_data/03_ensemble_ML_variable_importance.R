@@ -21,6 +21,7 @@ library(here)
 library(data.table)
 library(readr)
 library(future)
+library(parallel)
 library(doParallel)
 # library(doSNOW)
 
