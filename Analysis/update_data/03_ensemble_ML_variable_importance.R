@@ -20,6 +20,7 @@ library(readxl)
 library(here)
 library(data.table)
 library(readr)
+library(cowplot)
 library(future)
 library(parallel)
 library(doParallel)
@@ -91,7 +92,7 @@ varimp_server <- function(fit,
     
     nworkers <- as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
     nworkers
-    doParallel::registerDoParallel(nworkers)
+    doParallel::registerDoParallel(nworkers-4)
     
     risk_importance <- foreach(i = X, .combine = 'c') %dopar% {
       scrambled_col <- data.table(sample(unlist(dat[, i, with = FALSE]), nrow(dat)))
@@ -144,7 +145,7 @@ varimp_server <- function(fit,
     quantile_results <- data.table(X = names(quantile_importance), risk_difference = unlist(quantile_importance))
     quantile_results_ordered <- quantile_results[order(-quantile_results$risk_difference)]
     
-    merged_results <- merge(risk_importance, quantile_importance, by = "X")
+    merged_results <- merge(risk_results_ordered, quantile_results_ordered, by= "X")
     merged_results$X<- data_dictionary$`Nice Label`[match(merged_results$X, data_dictionary$`Variable Name`)]
     
     risk_plot <- merged_results %>%
