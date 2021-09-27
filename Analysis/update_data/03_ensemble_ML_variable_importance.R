@@ -32,9 +32,6 @@ library(doParallel)
 # 
 # registerDoSNOW(cl)
 
-# nworkers <- as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
-# nworkers
-# doParallel::registerDoParallel(nworkers)
 
 plan(multisession)
 
@@ -91,6 +88,10 @@ varimp_server <- function(fit,
     Y <- task$Y
     preds <- fit$predict_fold(task, fold_number = "validation")
     risk <- mean(loss(preds, Y))
+    
+    nworkers <- as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
+    nworkers
+    doParallel::registerDoParallel(nworkers)
     
     risk_importance <- foreach(i = X, .combine = 'c') %dopar% {
       scrambled_col <- data.table(sample(unlist(dat[, i, with = FALSE]), nrow(dat)))
