@@ -22,7 +22,7 @@ library(data.table)
 library(readr)
 library(future)
 library(parallel)
-library(doParallel)
+# library(doParallel)
 # library(doSNOW)
 
 # machines=rep(strsplit(Sys.getenv("SLURM_NODELIST"), ",")[[1]],
@@ -32,10 +32,11 @@ library(doParallel)
 # 
 # registerDoSNOW(cl)
 
-nworkers <- as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
-nworkers
-doParallel::registerDoParallel(nworkers)
+# nworkers <- as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
+# nworkers
+# doParallel::registerDoParallel(nworkers)
 
+plan(multisession)
 
 ## load data
 covid_data_processed <- read_csv(here("Analysis/update_data/data/processed/cleaned_covid_data_final_sept_24_21.csv"))
@@ -333,9 +334,7 @@ run_sl3_poisson_lrns <- function(outcome,
     metalearner = discrete_sl_metalrn
   )
   ## fit the sl3 object
-  sl_fit <- delayed_learner_train(discrete_sl, task)
-  
-  # sl_fit <- discrete_sl$train(task)
+  sl_fit <- discrete_sl$train(task)
   
   # best_model <- sl_fit$fit_object$full_fit$learner_fits$Stack$learner_fits$Lrnr_ranger_200_TRUE_none_1$fit_object
   
