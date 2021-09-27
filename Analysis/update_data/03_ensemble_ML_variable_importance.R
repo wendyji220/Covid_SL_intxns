@@ -90,11 +90,11 @@ varimp_server <- function(fit,
     preds <- fit$predict_fold(task, fold_number = "validation")
     risk <- mean(loss(preds, Y))
     
-    nworkers <- as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
+    nworkers <- 18 #as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
     nworkers
-    doParallel::registerDoParallel(nworkers-4)
+    doParallel::registerDoParallel(nworkers)
     
-    risk_importance <- foreach(i = X, .combine = 'c') %dopar% {
+    risk_importance <- foreach(i = X, .combine = 'c', .errorhandling = "pass") %dopar% {
       scrambled_col <- data.table(sample(unlist(dat[, i, with = FALSE]), nrow(dat)))
       names(scrambled_col) <- i
       scrambled_col_names <- task$add_columns(scrambled_col)
@@ -364,11 +364,11 @@ run_sl3_poisson_lrns <- function(outcome,
 #   outSub # variable importancesdd
 # }))
 
-Deathsat1year <- run_sl3_poisson_lrns(outcome = "Deathsat1year", 
+Casestodate <- run_sl3_poisson_lrns(outcome = "TotalCasesUpToDate", 
                                             data = covid_data_processed, 
                                             covars = covars,
                                             data_dictionary = Data_Dictionary, 
-                                            label = "COVID Deaths at 1 Year")
+                                            label = "Total COVID Cases To-Date")
 
 # ptm <- proc.time()
 # ML_pipeline_output <- purrr::walk(.x = outcomes[1:length(outcomes)], 
