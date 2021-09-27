@@ -22,7 +22,7 @@ library(data.table)
 library(readr)
 library(future)
 library(parallel)
-# library(doParallel)
+library(doParallel)
 # library(doSNOW)
 
 # machines=rep(strsplit(Sys.getenv("SLURM_NODELIST"), ",")[[1]],
