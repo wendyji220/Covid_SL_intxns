@@ -1,5 +1,7 @@
-# load packages
-packages = c("tigris", "sf", "caret", "rvest", "dplyr", 
+##############################
+# Load librairies
+##############################
+packages <- c("tigris", "sf", "caret", "rvest", "dplyr", 
              "tidyverse", "here", "tidyr", "readxl")
 
 check_packages = function(p){
@@ -10,7 +12,6 @@ check_packages = function(p){
 }
 
 lapply(packages, check_packages)
-
 
 # Download USFacts data
 usf <- data.frame(
@@ -48,7 +49,7 @@ polygons <- polygons[order(polygons$fips), ]
 centroids <- sf::st_coordinates(sf::st_centroid(polygons))
 
 # Initialize counties
-counties=data.frame(
+counties <- data.frame(
   "FIPS"=polygons$fips,
   "Name"=polygons$NAME,
   "FirstCaseDay"=NA,
@@ -82,10 +83,10 @@ mdeaths <- data.matrix(usf[, (ndays + 10):(2 * ndays + 9)])
 # Calculate counties cases and deaths statistics
 for (i in 1:nrow(counties)) {
   if (any(mcases[i,]>0)){
-    counties$TotalCasesUpToDate[i]=mcases[i,ndays]
-    counties$TotalDeathsUpToDate[i]=mdeaths[i,ndays]
-    fc=min(which(mcases[i,]>0))
-    counties$FirstCaseDay[i]=fc
+    counties$TotalCasesUpToDate[i] <- mcases[i,ndays]
+    counties$TotalDeathsUpToDate[i] <- mdeaths[i,ndays]
+    fc <- min(which(mcases[i,]>0))
+    counties$FirstCaseDay[i]<-fc
     if (ndays-fc>=100) {counties$CountyRelativeDay100Deaths[i]=mdeaths[i,100]}
     if (ndays-fc>=100) {counties$CountyRelativeDay100Cases[i]=mcases[i,fc+24]}
     if (ndays-fc>=365) {counties$Deathsat1year[i]=mdeaths[i,365]}
