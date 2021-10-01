@@ -1,13 +1,16 @@
-# Adding polygon info for counties to get the centroid
-library(tigris) # using the counties() command
-library(sf)
-library(caret)
-library(rvest)
-library(dplyr)
-library(tidyverse)
-library(here)
-library(tidyr)
-library(readxl)
+# load packages
+packages = c("tigris", "sf", "caret", "rvest", "dplyr", 
+             "tidyverse", "here", "tidyr", "readxl")
+
+check_packages = function(p){
+  if(!require(p, character.only = TRUE)){
+    install.packages(p, dependencies = TRUE)
+  }
+  library(p, character.only = TRUE)
+}
+
+lapply(packages, check_packages)
+
 
 # Download USFacts data
 usf <- data.frame(
