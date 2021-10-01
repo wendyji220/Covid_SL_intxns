@@ -25,7 +25,7 @@ usf$fips <- as.integer(usf[, 1])
 usf <- usf[!((usf$State %in% c("AK", "HI")) | (usf$fips == 0)), ]
 
 # Read airports data
-airports <- read.csv(here("data/processed/counties_airports.csv"))
+airports <- read.csv(here("Analysis/update_data/data/processed/counties_airports.csv"))
 
 
 # Read counties polygons
@@ -35,7 +35,7 @@ airports <- read.csv(here("data/processed/counties_airports.csv"))
 # polygons=sf::st_read("data/shape/tl_2019_us_county.shp")
 polygons <- counties(cb = F, year = 2019, class = "sf")
 # Parse FIPS as integers
-polygons <- readRDS(here("data/raw/polygons.RDS"))
+polygons <- readRDS(here("Analysis/update_data/data/raw/polygons.RDS"))
 polygons$fips <- as.integer(as.character(polygons$GEOID))
 # Keep only counties with data from US Facts
 polygons <- polygons[polygons$fips %in% usf$fips, ]
@@ -107,8 +107,8 @@ for (i in 1:nrow(counties)) {
 }
 
 # Add population data
-county_population <- read.csv(here("data/processed/nir_covid_county_population_usafacts.csv"))
-counties$Population <- a$population[match(counties$FIPS, as.integer(county_population$countyFIPS))]
+county_population <- read.csv(here("Analysis/update_data/data/processed/nir_covid_county_population_usafacts.csv"))
+counties$Population <- county_population$population[match(counties$FIPS, as.integer(county_population$countyFIPS))]
 
 # Add public transportation data
 # a=read.csv(here('Analysis/update_data/data/raw/ACSST5Y2018.S0802_data_with_overlays_2020-04-11T224619.csv'))
@@ -119,26 +119,26 @@ counties$Population <- a$population[match(counties$FIPS, as.integer(county_popul
 # I (whitney) changed the countyGDP to lagdp1219
 # we may need to change this back to what it was before
 # switched back to CountyGDP 5/23/20
-county_GDP <- read.csv(here("data/raw/CountyGDP.csv"))
-counties$GDP <- a$X2018[match(counties$FIPS, as.integer(county_GDP$GeoFips))]
+county_GDP <- read.csv(here("Analysis/update_data/data/raw/CountyGDP.csv"))
+counties$GDP <- county_GDP$X2018[match(counties$FIPS, as.integer(county_GDP$GeoFips))]
 
 # Add single value variables from census
 for (name in c("air_quality", "all_heartdisease_deathrate", "all_stroke_deathrate", "num_hospitals", "percent_park_access", "urban_rural_status")) {
-  a <- read.csv(here(paste("data/raw/", name, ".csv", sep = "")))
+  a <- read.csv(here(paste("Analysis/update_data/data/raw/", name, ".csv", sep = "")))
   a$Value[a$Value == -1] <- NA
   counties[name] <- a$Value[match(counties$FIPS, a$cnty_fips)]
 }
 
 # Add analytic_data2020
-a <- read.csv(here("data/raw/analytic_data2020.csv"))
-a <- a[2:nrow(a), ]
-counties <- cbind(counties, a[match(counties$FIPS, as.integer(as.character(a$X5.digit.FIPS.Code))), 
+analytic_data <- read.csv(here("Analysis/update_data/data/raw/analytic_data2020.csv"))
+analytic_data <- analytic_data[2:nrow(analytic_data), ]
+counties <- cbind(counties, analytic_data[match(counties$FIPS, as.integer(as.character(analytic_data$X5.digit.FIPS.Code))), 
                               c(8, 34, 39, 70, 75, 80, 85, 90, 95, 105, 130, 135, 140, 153, 173, 183, 188, 193, 218, 258, 263, 276, 282, 302, 307, 402, 407, 412, 417, 462, 503, 681, 686, 691, 701, 706)])
 
 # Add County_Table_Chronic_Conditions_Prevalence_by_Age_2017.xlsx
 age_group <- c("prev_2017_all_ages_", "prev_2017_under_65_", "prev_2017_over_65_")
 for (i in 1:3) {
-  a <- readxl::read_excel(here("data/chronic_conditions_prev_by_age_2017.xlsx"), sheet = i)
+  a <- readxl::read_excel(here("Analysis/update_data/data/chronic_conditions_prev_by_age_2017.xlsx"), sheet = i)
   # a=a[1:nrow(a),]
   b <- a[, 4:24]
   colnames(b) <- paste0(age_group[i], colnames(b))
@@ -173,7 +173,7 @@ for (i in 1:3) {
 # }
 
 # Add SVI2018_US_COUNTY.csv - this has the CDC vulnerability scores:
-county_SVI <- read.csv(here("data/raw/SVI2018_US_COUNTY.csv"))
+county_SVI <- read.csv(here("Analysis/update_data/data/raw/SVI2018_US_COUNTY.csv"))
 county_SVI <- select(county_SVI, c(
   "FIPS",
   "EPL_AGE65",
@@ -197,8 +197,7 @@ counties <- cbind(counties, county_SVI[match(counties$FIPS, county_SVI$FIPS), ])
 
 # Changed from tester2.csv to 2018ACS.csv
 # 06/10/2020 changed 2018ACS to acs_2018_Jun.csv
-acs <- read.csv(here("data/raw/acs_2018_Jun.csv"))
-# Changed a$GEOID to a$GEIOD because I missspelled it
+acs <- read.csv(here("Analysis/update_data/data/raw/acs_2018_Jun.csv"))
 counties <- cbind(counties, acs[match(counties$FIPS, acs$GEIOD), 3:ncol(acs)])
 
 # Prepare states to match census state fips to NOAA state fips
@@ -240,7 +239,7 @@ counties <- counties[,-128]
 ####################### CLIMATE CHANGE DATA ON TEMPERATURE CHANGES OVER YEARS #################################
 ###############################################################################################################
 
-temp_lm_models_by_county <- read_excel("data/raw/temp_lm_models_by_county.xlsx")
+temp_lm_models_by_county <- read_excel(here("Analysis/update_data/data/raw/temp_lm_models_by_county.xlsx"))
 
 counties <- merge(counties, 
                   temp_lm_models_by_county, by.x = "FIPS", by.y = "fips")
@@ -264,7 +263,7 @@ counties$agg_commuting_by_work_place <- counties$agg_commuting_by_work_place / c
 
 
 ## read in employment data
-lbs_employment_types <- read_excel(here("data/raw/lbs_employment_types.xlsx"),
+lbs_employment_types <- read_excel(here("Analysis/update_data/data/raw/lbs_employment_types.xlsx"),
   sheet = "US_St_Cn_MSA"
 )
 
@@ -272,13 +271,13 @@ lbs_employment_x_county <- lbs_employment_types %>%
   filter(`Area Type` == "County") %>%
   select(c("Area\r\nCode", "Ownership", "Industry", "Establishment Count")) %>%
   mutate(fips = `Area\r\nCode`) %>%
-  # mutate(fips = str_sub(fips, 2))  %>%
   mutate(occu_counts = `Establishment Count`)
 
 lbs_employment_x_county$Industry <- paste(
   lbs_employment_x_county$Ownership,
   lbs_employment_x_county$Industry
 )
+
 lbs_employment_x_county$Industry <- gsub("[[:digit:]]+", "", lbs_employment_x_county$Industry)
 
 lbs_employment_x_county <- lbs_employment_x_county %>%
@@ -455,7 +454,7 @@ write.csv(
 # mobility_data_long <- rbind(df.1, df.2,df.3,df.4,df.5,df.6)
 # 
 
-summary_report_US <- read.csv("~/Documents/PhD/covid/GetzHubbard/Analysis/update_data/data/raw/summary_report_US.txt")
+summary_report_US <- read.csv("Analysis/update_data/data/raw/summary_report_US.txt")
 
 summary_report_US$date <- as.Date(summary_report_US$date, "%Y-%m-%d")
 
