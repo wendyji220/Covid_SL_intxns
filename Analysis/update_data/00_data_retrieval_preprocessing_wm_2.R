@@ -2,11 +2,11 @@
 # Load librairies
 ##############################
 packages <- c("tigris", "sf", "caret", "rvest", "dplyr", 
-             "tidyverse", "here", "tidyr", "readxl")
+             "tidyverse", "here", "tidyr", "readxl", "panelr")
 
 check_packages = function(p){
   if(!require(p, character.only = TRUE)){
-    install.packages(p, dependencies = TRUE)
+    install.packages(p)
   }
   library(p, character.only = TRUE)
 }
@@ -127,13 +127,14 @@ for (name in c("air_quality", "all_heartdisease_deathrate", "all_stroke_deathrat
 analytic_data <- read.csv(here("Analysis/update_data/data/raw/analytic_data2020.csv"))
 analytic_data <- analytic_data[2:nrow(analytic_data), ]
 counties <- cbind(counties, analytic_data[match(counties$FIPS, as.integer(as.character(analytic_data$X5.digit.FIPS.Code))), 
-                              c(8, 34, 39, 70, 75, 80, 85, 90, 95, 105, 130, 135, 140, 153, 173, 183, 188, 193, 218, 258, 263, 276, 282, 302, 307, 402, 407, 412, 417, 462, 503, 681, 686, 691, 701, 706)])
+                              c(8, 34, 39, 70, 75, 80, 85, 90, 95, 105, 130, 135,
+                                140, 153, 173, 183, 188, 193, 218, 258, 263, 276, 282, 302, 
+                                307, 402, 407, 412, 417, 462, 503, 681, 686, 691, 701, 706)])
 
 # Add County_Table_Chronic_Conditions_Prevalence_by_Age_2017.xlsx
 age_group <- c("prev_2017_all_ages_", "prev_2017_under_65_", "prev_2017_over_65_")
 for (i in 1:3) {
   a <- readxl::read_excel(here("Analysis/update_data/data/chronic_conditions_prev_by_age_2017.xlsx"), sheet = i)
-  # a=a[1:nrow(a),]
   b <- a[, 4:24]
   colnames(b) <- paste0(age_group[i], colnames(b))
   c <- data.frame(a[, 1:3], b)
@@ -184,7 +185,7 @@ counties <- merge(counties,
 
 
 # Read commuting data
-commuting <- readxl::read_excel("Analysis/update_data/data/raw/USCommuting2015.xlsx", skip = 6)
+commuting <- readxl::read_excel(here("Analysis/update_data/data/raw/USCommuting2015.xlsx"), skip = 6)
 commuting <- commuting[1:139433, ]
 
 fips_residence <- as.integer(commuting$`State FIPS Code...1`) * 1000 + as.integer(commuting$`County FIPS Code...2`)
