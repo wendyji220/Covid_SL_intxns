@@ -1,6 +1,5 @@
-##############################
-# Load librairies
-##############################
+################ Load Libraries ##################
+
 packages <- c("tigris", "sf", "caret", "rvest", "dplyr", 
               "tidyverse", "here", "tidyr", "readxl", "panelr", "pROC", "imputeTS")
 
@@ -13,9 +12,8 @@ check_packages = function(p){
 
 lapply(packages, check_packages)
 
-##############################
-# Define global variables
-##############################
+
+################ Define Global Variables ##################
 
 `%notin%` <- Negate(`%in%`)
 
@@ -27,9 +25,7 @@ CORR_THRESH <- 0.99
 CENSUS_DATA_RENAME <- FALSE
 
 
-##############################
-# US Facts
-##############################
+################ US Facts ##################
 
 usf <- data.frame(
   read.csv("https://usafactsstatic.blob.core.windows.net/public/data/covid-19/covid_confirmed_usafacts.csv"),
@@ -43,9 +39,7 @@ usf$fips <- as.integer(usf[, 1])
 usf <- usf[!((usf$State %in% c("AK", "HI")) | (usf$fips == 0)), ]
 
 
-##############################
-#  County polygon
-##############################
+################ County Polygons ##################
 
 polygons <- counties(cb = F, year = 2019, class = "sf")
 polygons$fips <- as.integer(as.character(polygons$GEOID))
@@ -87,9 +81,8 @@ for (i in 1:nrow(counties)) {
 }
 
 
-##############################
-# Airports data
-##############################
+################ Airport Data ##################
+
 airports <- read.csv(here("Analysis/update_data/data/processed/counties_airports.csv"))
 
 # Store a vector of indices of airports with enplanements of at least 5,000,000
@@ -108,34 +101,34 @@ for (i in 1:nrow(counties)) {
   counties$NearestAirportOver5000000Enplanements[i] <- airports$CY.18.Enplanements[ind_larger_than_5m[m]]
 }
 
-##############################
-# Population data
-##############################
+
+################ Population Data ##################
+
 county_population <- read.csv(here("Analysis/update_data/data/processed/nir_covid_county_population_usafacts.csv"))
 counties$Population <- county_population$population[match(FIPS, as.integer(county_population$countyFIPS))]
 
-##############################
-# County GDP data
-##############################
+
+################ County GDP Data ##################
+
 county_GDP <- read.csv(here("Analysis/update_data/data/raw/CountyGDP.csv"))
 counties$GDP <- county_GDP$X2018[match(FIPS, as.integer(county_GDP$GeoFips))]
 
 
-##############################
-# Census value
-##############################
+
+################ Census Value ##################
 
 census_files = c("air_quality", "all_heartdisease_deathrate", "all_stroke_deathrate", 
                    "num_hospitals", "percent_park_access", "urban_rural_status")
+
 for (name in census_files) {
   dat <- read.csv(here(paste("Analysis/update_data/data/raw/", name, ".csv", sep = "")))
-  dat$Value[a$Value == -1] <- NA
+  dat$Value[dat$Value == -1] <- NA
   counties[name] <- dat$Value[match(FIPS, dat$cnty_fips)]
 }
 
-##############################
-# Analytic data
-##############################
+
+################ Analytic Data ##################
+
 analytic_data <- read.csv(here("Analysis/update_data/data/raw/analytic_data2020.csv"))
 analytic_data <- analytic_data[2:nrow(analytic_data), ]
 counties <- cbind(counties, 
@@ -143,9 +136,7 @@ counties <- cbind(counties,
                                           c(8, 34, 39, 70, 75, 80, 85, 90, 95, 105, 130, 135, 140, 153, 173, 183, 188, 193, 218, 258, 263, 276, 282, 302, 
                                             307, 402, 407, 412, 417, 462, 503, 681, 686, 691, 701, 706)])
 
-##############################
-# Chronic conditions
-##############################
+################ Chronic Conditions ##################
 
 age_group <- c("prev_2017_all_ages_", "prev_2017_under_65_", "prev_2017_over_65_")
 for (i in 1:3) {
@@ -156,12 +147,11 @@ for (i in 1:3) {
   counties <- cbind(counties, selected_dat[match(FIPS, chronic_fips), ])
 }
 
-##############################
-# County SVI 
-##############################
+################ County SVI ##################
+
 county_SVI <- read.csv(here("Analysis/update_data/data/raw/SVI2018_US_COUNTY.csv"))
+SVI_fips <- county_SVI$FIPS
 county_SVI <- select(county_SVI, c(
-  "FIPS",
   "EPL_AGE65",
   "EPL_AGE17",
   "EPL_DISABL",
@@ -175,11 +165,10 @@ county_SVI <- select(county_SVI, c(
   "EPL_GROUPQ",
   "EPL_PCI"
 ))
-counties <- cbind(counties, county_SVI[match(FIPS, county_SVI$FIPS), ])
+counties <- cbind(counties, county_SVI[match(FIPS, SVI_fips), ])
 
-##############################
-# County ACS
-##############################
+
+################ County ACS ##################
 
 acs <- read.csv(here("Analysis/update_data/data/raw/acs_2018_Jun.csv"))
 counties <- cbind(counties, acs[match(FIPS, acs$GEIOD), 3:ncol(acs)])
@@ -188,9 +177,9 @@ counties <- cbind(counties, acs[match(FIPS, acs$GEIOD), 3:ncol(acs)])
 states <- as.character(unique(usf$State))
 states_fips <- purrr::map(states, function(state) usf$stateFIPS[which(usf$State == state)[1]])
 
-##############################
-# Climate change data
-##############################
+
+################ Climate Change Data ##################
+
 
 temp_lm_models_by_county <- read_excel(here("Analysis/update_data/data/raw/temp_lm_models_by_county.xlsx"))
 
@@ -198,9 +187,8 @@ counties <- merge(counties,
                   temp_lm_models_by_county, by.x = "FIPS", by.y = "fips")
 
 
-##############################
-# Commuting data
-##############################
+
+################ Commuting Data ##################
 
 commuting <- readxl::read_excel(here("Analysis/update_data/data/raw/USCommuting2015.xlsx"), skip = 6)
 commuting <- commuting[1:139433, ]
@@ -221,6 +209,161 @@ add_commute("residence")
 add_commute("work")
 
 
+################ Employment Data ##################
+
+lbs_employment_types <- read_excel(here("Analysis/update_data/data/raw/lbs_employment_types.xlsx"),
+                                   sheet = "US_St_Cn_MSA")
+
+
+lbs_employment_x_county <- lbs_employment_types %>%
+  filter(`Area Type` == "County") %>%
+  select(fips = `Area\r\nCode`, Ownership, Industry, occu_counts = `Establishment Count`)
+
+lbs_employment_x_county$Industry <- paste(
+  lbs_employment_x_county$Ownership,
+  lbs_employment_x_county$Industry
+)
+
+lbs_employment_x_county$Industry <- gsub("[[:digit:]]+", "", lbs_employment_x_county$Industry)
+lbs_employment_x_county <- lbs_employment_x_county %>%
+  select(-c("Ownership"))
+
+lbs_employment_x_county_wide <- spread(
+  lbs_employment_x_county,
+  Industry,
+  occu_counts
+)
+
+lbs_employment_x_county_wide$fips <- as.integer(lbs_employment_x_county_wide$fips)
+
+
+lbs_employment_x_county_wide_rename <-
+  lbs_employment_x_county_wide %>% 
+  select(fips,
+         occ_all_federal = `Federal Government  Total, all industries`,
+         occ_all_state = `State Government  Total, all industries`,
+         occ_all_local = `Local Government  Total, all industries`,
+         occ_all_private = `Private  Total, all industries`,
+         occ_goods_prod = `Private  Goods-producing`,
+         occ_natural_mining = `Private  Natural resources and mining`,
+         occ_construction = `Private  Construction`,
+         occ_Manufacturing = `Private  Manufacturing`,
+         occ_servic_prov = `Private  Service-providing`,
+         occ_trade_trans_util = `Private  Trade, transportation, and utilities`,
+         occ_Info = `Private  Information`,
+         occ_financial = `Private  Financial activities`,
+         occ_prof_business = `Private  Professional and business services`,
+         occ_educ_health = `Private  Education and health services`,
+         occ_leisure = `Private  Leisure and hospitality`,
+         occ_other_services = `Private  Unclassified`
+  )
+
+counties_occ <- merge(counties, 
+                      lbs_employment_x_county_wide_rename, by.x = "FIPS", by.y = "fips")
+
+counties_occ <- counties_occ %>% mutate_at(vars(contains('occ_')), function(x) x /counties_occ$Population)
+
+
+################ Health Ranking Data ##################
+
+County_Health_Rankings_Data <- read_excel(here("Analysis/update_data/data/raw/2020 County Health Rankings Data.xlsx"),
+                                          sheet = "Ranked Measure Data", skip = 1)
+
+County_Health_Rankings_Data_add_msrs <- County_Health_Rankings_Data %>% 
+  select(FIPS,
+         soc_assc_rate = `Social Association Rate`)
+
+County_Health_Rankings_Data_add_data <- read_excel(here("Analysis/update_data/data/raw/2020 County Health Rankings Data.xlsx"),
+                                                   sheet = "Additional Measure Data", skip = 1)
+
+County_Health_Rankings_Data_add_data_msrs <- County_Health_Rankings_Data_add_data %>% 
+  select(`FIPS`,
+         seg_index = `Segregation index`,
+         pct_mental_distress = `% Frequent Mental Distress`,
+         pct_insufficient_sleep = `% Insufficient Sleep`)
+
+County_Health_Rankings_Data_targets <- merge(County_Health_Rankings_Data_add_msrs,
+                                             County_Health_Rankings_Data_add_data_msrs,
+                                             by = "FIPS")
+
+counties_add_data <- merge(counties_occ, County_Health_Rankings_Data_targets, by = "FIPS")
+
+################ Political Party Data ##################
+
+countypres_2000_2020 <- read_csv(here("Analysis/update_data/data/raw/countypres_2000-2020.csv"))
+
+countypres2020 <- countypres_2000_2020 %>% filter(year == 2020)
+
+countypres2020_rep <- countypres2020 %>%
+  group_by(county_fips) %>%
+  mutate(rep_ratio = candidatevotes / sum(candidatevotes)) %>%
+  filter(party == "REPUBLICAN") %>%
+  select(county_fips, rep_ratio)
+
+countypres2020_rep <- countypres2020_rep %>%
+  group_by(county_fips) %>%
+  summarize(rep_ratio = mean(rep_ratio, na.rm=TRUE))
+
+counties_add_data_political <- merge(counties_add_data, countypres2020_rep, 
+                                     by.x= "FIPS", by.y= "county_fips")
+
+
+##################################################################################
+####################### MOBILITY DATA PROCESSING #################################
+##################################################################################
+summary_report_US <- read.csv(here("Analysis/update_data/data/raw/summary_report_US.txt"))
+
+summary_report_US$date <- as.Date(summary_report_US$date, "%Y-%m-%d")
+
+summary_report_US <- summary_report_US %>%
+  mutate(month = format(date, "%m"), year = format(date, "%Y"))
+
+
+mobility_data_long <- as.data.frame(summary_report_US)
+mobility_data_long <- subset(mobility_data_long, 
+                             select = -c(parks, transit.stations, transit,walking))
+
+mobility_data_long <- mobility_data_long %>% drop_na(retail.and.recreation:driving)
+
+names(mobility_data_long)[4:8] <- paste0("mobility_", 
+                                         gsub("\\.","\\_",names(mobility_data_long[4:8])))
+
+mobility_data_long <- mobility_data_long %>%
+  pivot_longer(cols = starts_with("mobility_"),
+               names_to = "type",
+               names_prefix = "mobility_",
+               values_to = "value",
+               values_drop_na = TRUE)
+
+google_mobility_coefs <- mobility_data_long %>% 
+  group_by(state, year, month, type) %>% 
+  group_modify(~broom::tidy(lm(value ~ date, ., na.action=na.exclude))) %>%
+  filter(term == "date") %>% 
+  select(state, month, estimate)
+
+google_mobility_coefs <- spread(google_mobility_coefs, type, estimate)
+
+google_mobility_coefs$date <- as.factor(paste(google_mobility_coefs$month, google_mobility_coefs$year, sep = ""))
+
+google_mobility_coefs <- subset(google_mobility_coefs, select = -c(month, year))
+google_mobility_coefs_panel <- panel_data(google_mobility_coefs, id = state, wave = date)
+
+google_mobility_coefs_wide <- widen_panel(google_mobility_coefs_panel, separator = "_")
+
+google_mobility_coefs_wide$state <- state.abb[match(google_mobility_coefs_wide$state,state.name)]
+
+fips_state_crosswalk <- read_excel(here("Analysis/update_data/data/processed/fips_state_crosswalk.xlsx"))
+
+counties_add_data_political_xwalk <- merge(counties_add_data_political, fips_state_crosswalk, on = "FIPS")
+
+counties_add_data_political_xwalk_google_mob <- merge(counties_add_data_political_xwalk, 
+                                                      google_mobility_coefs_wide, by.x = "State", by.y = "state", all.x)
+
+
+write.csv(
+  counties_add_data_political_xwalk_google_mob,
+  here("Analysis/update_data/data/processed/CountiesMergedData_Oct_08_2021.csv")
+)
 
 
 
