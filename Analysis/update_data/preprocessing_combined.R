@@ -24,6 +24,8 @@ CORR_THRESH <- 0.99
 ## run census variable rename? 
 CENSUS_DATA_RENAME <- FALSE
 
+RAW_DATA_PATH <- here('Analysis/update_data/data/raw/')
+
 
 ################ US Facts ##################
 
@@ -202,7 +204,7 @@ add_commute = function(commute_type){
   by_commute <- aggregate(commuting$`Workers in Commuting Flow`, list(fips = fips), sum)
   
   col_name <- paste0('agg_commuting_by_', commute_type, '_place')
-  counties[col_name] <- by_commute$x[match(FIPS, by_commute$fips)]/counties$population
+  counties$col_name <- by_commute$x[match(FIPS, by_commute$fips)]/counties$Population
 }
 
 add_commute("residence")
@@ -364,6 +366,155 @@ write.csv(
   counties_add_data_political_xwalk_google_mob,
   here("Analysis/update_data/data/processed/CountiesMergedData_Oct_08_2021.csv")
 )
+
+
+################ Air pollution Data ##################
+LUR.air.pollution.data <- read.csv(here('Analysis/update_data/data/raw/LUR_pollution_data.csv'))
+
+LUR.air.pollution.data <- LUR.air.pollution.data %>% mutate_at(c("year", "pollutant"), as.factor) 
+
+means.cross.year <- LUR.air.pollution.data %>%
+  group_by(fips, pollutant) %>%
+  summarize(mean_size = mean(pred_wght, na.rm = TRUE))
+
+LUR.air.pull.wide <- means.cross.year %>% 
+  pivot_wider(names_from = pollutant, values_from = mean_size)
+
+
+################ Mask Use Variable ##################
+mask.use.data <- read.csv(here('Analysis/update_data/data/raw/mask-use-by-county.csv'))
+
+################ Lead Exposure Variable ##################
+lead_risk_score <- read_csv(here("Analysis/update_data/data/raw/lead-risk-score.csv"))
+lead_risk_score <- lead_risk_score[,-1]
+
+lead_risk_score <- lead_risk_score %>%
+  mutate(fips = substr(id, 1, 5))
+
+lead_risk_score <- lead_risk_score %>% 
+  group_by(fips) %>%
+  summarise(across(-(c(name, id)), mean, na.rm = TRUE))
+
+
+################ Water Contaminant Exposure Variable ##################
+
+summarized_contaminants_raw <- read_csv(here("Analysis/update_data/data/raw/summarized_contaminants.csv"))
+
+summarized_contaminants_ratio <- summarized_contaminants_raw %>%
+  subset(select = -c(fips,`number of points`)) / summarized_contaminants_raw$`number of points`
+
+summarized_contaminants_ratio$fips <- summarized_contaminants_raw$fips
+
+################ PESTICIDE EXPOSURE VARIABLES ##################
+
+pesticide_data <- read.csv(here('Analysis/update_data/data/raw/EPest_county_estimates_2013_2017_v2.txt'), sep = "\t")
+
+pesticide_data <- pesticide_data %>%
+  rowwise() %>% mutate(kg_avg=mean(c(EPEST_LOW_KG, EPEST_HIGH_KG), na.rm=T)) 
+
+pesticide_data$fips <- paste(pesticide_data$STATE_FIPS_CODE, str_pad(pesticide_data$COUNTY_FIPS_CODE, 3, pad = "0"), sep = "")
+
+pesticide_avgs_by_year <- pesticide_data %>%
+  group_by(fips, COMPOUND) %>%
+  summarize(mean_kg = mean(kg_avg, na.rm = TRUE))
+
+
+pesticide_avgs_by_year <- pesticide_avgs_by_year %>% 
+  pivot_wider(names_from = COMPOUND, values_from = mean_kg)
+
+pesticide_avgs_by_year <- pesticide_avgs_by_year[, which(colMeans(!is.na(pesticide_avgs_by_year)) > na_thresh)]
+
+pesticide_avgs_by_year <- na.interpolation(pesticide_avgs_by_year, option = "spline")
+
+
+################ CHEMICAL EXPOSURE VARIABLES ##################
+arsenic_violations <- read.csv(paste(RAW_DATA_PATH, 'SDWIS_As_Violations_County_2006-2017_FINAL.csv', sep=''), sep = ",")
+arsenic_violations <- arsenic_violations %>% select(FIPS, Freq)
+colnames(arsenic_violations)[2] <- "water_arsenic_violation_freq"
+
+prepare_data_for_chemicals = function(file_name){
+  chemical_data <- read.csv(paste(RAW_DATA_PATH, file_name, sep=''), sep = ",", stringsAsFactors = FALSE)
+  chemical_data$Value <- as.numeric(as.character(chemical_data$Value))
+  
+  avg_name <- paste("avg", gsub(".csv", "", file_name), sep="_")
+  chemical_data <- chemical_data %>% 
+    group_by(countyFIPS) %>%
+    summarize(!!avg_name := mean(Value, na.rm=TRUE))
+  
+  return(chemical_data)
+}
+
+file_names <- list.files(path = RAW_DATA_PATH, pattern = "\\levels.csv$")
+lapply(file_names, prepare_data_for_chemicals)
+
+
+
+################ INCARCERATION VARIABLES BY ETHNICITY ##################
+
+incarceration_trends <- read_excel(paste(RAW_DATA_PATH, 'incarceration_trends.xlsx', sep=''))
+incarceration_trends <- incarceration_trends %>%
+  filter(year == 2018)
+
+incarceration_trends <- incarceration_trends[, which(colMeans(!is.na(incarceration_trends)) > NA_THRESH)]
+
+in_colnames <- names(incarceration_trends)
+end_matching_age = function(x) endsWith(x, '15to64')
+
+end_matching_rate <- function(x) endsWith(x, '_rate')
+
+
+incarceration_trends <- subset(incarceration_trends, 
+                               select = in_colnames %in% c("fips", "county_name", "total_pop") 
+                               | end_matching_age(in_colnames) 
+                               | end_matching_rate(in_colnames))
+
+
+ethnity_group <- c("black", "aapi", "latinx", "native")
+
+incarceration_trends <- incarceration_trends %>%
+  mutate(across(contains(paste(ethnity_group, "jail_pop_rate", sep="_")), 
+                 .fns = list(white = function(x) x/incarceration_trends$white_jail_pop_rate),
+                 .names = "{fn}_{col}" ))
+
+other_group <- c("white", "total", "female", "male")
+
+incarceration_trends <- incarceration_trends %>%
+  mutate(across(contains(paste(other_group, "pop_15to64", sep="_")), 
+                .fns = list(ratio = function(x) x/incarceration_trends$total_pop),
+                .names = "{col}_{fn}" ))
+
+incarceration_trends <- incarceration_trends %>%
+  mutate(across(contains(paste(ethnity_group, "pop_15to64", sep="_")), 
+                .fns = list(ratio = function(x) (x/incarceration_trends$total_pop)/incarceration_trends$white_pop_15to64_ratio),
+                .names = "{col}_{fn}" ))
+
+
+incarceration_trends <- subset(incarceration_trends, 
+                               select = !end_matching_age(names(incarceration_trends))
+                                          & !names(incarceration_trends) %in% c("total_pop", "total_jail_pop_rate"))
+
+
+incarceration_trends <- subset(incarceration_trends, select = -c(total_pop, 
+                                                                 total_pop_15to64,
+                                                                 female_pop_15to64, 
+                                                                 male_pop_15to64, 
+                                                                 aapi_pop_15to64,
+                                                                 black_pop_15to64,
+                                                                 latinx_pop_15to64,
+                                                                 native_pop_15to64,
+                                                                 white_pop_15to64,
+                                                                 total_jail_pop_rate))
+
+
+
+
+################ STRUCTURAL RACISM VARIABLES ##################
+
+
+
+
+################ CLEANING ##################
+
 
 
 
