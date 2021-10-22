@@ -1,7 +1,8 @@
 ################ Load Libraries ##################
 
 packages <- c("tigris", "sf", "caret", "rvest", "dplyr", 
-              "tidyverse", "here", "tidyr", "readxl", "panelr", "pROC", "imputeTS")
+              "tidyverse", "tidycensus","tmap", "rmapshaper", 
+              "here", "tidyr", "readxl", "panelr", "pROC", "imputeTS")
 
 check_packages = function(p){
   if(!require(p, character.only = TRUE)){
@@ -24,7 +25,14 @@ CORR_THRESH <- 0.99
 ## run census variable rename? 
 CENSUS_DATA_RENAME <- FALSE
 
-RAW_DATA_PATH <- here('Analysis/update_data/data/raw/')
+RAW_DATA_PATH = function(file_name){
+  return(paste(here('Analysis/update_data/data/raw/'), file_name, sep=''))
+}
+
+PROCESSED_DATA_PATH = function(file_name){
+  return(paste(here('Analysis/update_data/data/processed/'), file_name, sep=''))
+}
+
 
 
 ################ US Facts ##################
@@ -85,7 +93,7 @@ for (i in 1:nrow(counties)) {
 
 ################ Airport Data ##################
 
-airports <- read.csv(here("Analysis/update_data/data/processed/counties_airports.csv"))
+airports <- read.csv(PROCESSED_DATA_PATH("counties_airports.csv"))
 
 # Store a vector of indices of airports with enplanements of at least 5,000,000
 ind_larger_than_5m <- which(airports$CY.18.Enplanements >= 5000000, )
@@ -106,15 +114,14 @@ for (i in 1:nrow(counties)) {
 
 ################ Population Data ##################
 
-county_population <- read.csv(here("Analysis/update_data/data/processed/nir_covid_county_population_usafacts.csv"))
+county_population <- read.csv(PROCESSED_DATA_PATH("nir_covid_county_population_usafacts.csv"))
 counties$Population <- county_population$population[match(FIPS, as.integer(county_population$countyFIPS))]
 
 
 ################ County GDP Data ##################
 
-county_GDP <- read.csv(here("Analysis/update_data/data/raw/CountyGDP.csv"))
+county_GDP <- read.csv(RAW_DATA_PATH('CountyGDP.csv'))
 counties$GDP <- county_GDP$X2018[match(FIPS, as.integer(county_GDP$GeoFips))]
-
 
 
 ################ Census Value ##################
@@ -123,7 +130,7 @@ census_files = c("air_quality", "all_heartdisease_deathrate", "all_stroke_deathr
                    "num_hospitals", "percent_park_access", "urban_rural_status")
 
 for (name in census_files) {
-  dat <- read.csv(here(paste("Analysis/update_data/data/raw/", name, ".csv", sep = "")))
+  dat <- read.csv(paste(RAW_DATA_PATH(name), ".csv", sep = ""))
   dat$Value[dat$Value == -1] <- NA
   counties[name] <- dat$Value[match(FIPS, dat$cnty_fips)]
 }
@@ -131,18 +138,21 @@ for (name in census_files) {
 
 ################ Analytic Data ##################
 
-analytic_data <- read.csv(here("Analysis/update_data/data/raw/analytic_data2020.csv"))
+analytic_data <- read.csv(RAW_DATA_PATH('analytic_data2020.csv'))
 analytic_data <- analytic_data[2:nrow(analytic_data), ]
+col_analytics <- names(analytic_data)
+
 counties <- cbind(counties, 
                   analytic_data[match(FIPS, as.integer(as.character(analytic_data$X5.digit.FIPS.Code))), 
-                                          c(8, 34, 39, 70, 75, 80, 85, 90, 95, 105, 130, 135, 140, 153, 173, 183, 188, 193, 218, 258, 263, 276, 282, 302, 
-                                            307, 402, 407, 412, 417, 462, 503, 681, 686, 691, 701, 706)])
+                                grepl("raw.value" , col_analytics) | 
+                                  col_analytics %in% c("Ratio.of.population.to.primary.care.physicians.", "Percentage.of.households.with.overcrowding")])
 
 ################ Chronic Conditions ##################
 
 age_group <- c("prev_2017_all_ages_", "prev_2017_under_65_", "prev_2017_over_65_")
+
 for (i in 1:3) {
-  chronic_dat <- readxl::read_excel(here("Analysis/update_data/data/chronic_conditions_prev_by_age_2017.xlsx"), sheet = i)
+  chronic_dat <- read_excel(here("Analysis/update_data/data/chronic_conditions_prev_by_age_2017.xlsx"), sheet = i)
   selected_dat <- chronic_dat[, 4:ncol(chronic_dat)]
   colnames(selected_dat) <- paste0(age_group[i], colnames(selected_dat))
   chronic_fips <- as.integer(chronic_dat$`State/County FIPS Code`)
@@ -151,28 +161,20 @@ for (i in 1:3) {
 
 ################ County SVI ##################
 
-county_SVI <- read.csv(here("Analysis/update_data/data/raw/SVI2018_US_COUNTY.csv"))
+county_SVI <- read.csv(RAW_DATA_PATH("SVI2018_US_COUNTY.csv"))
 SVI_fips <- county_SVI$FIPS
-county_SVI <- select(county_SVI, c(
-  "EPL_AGE65",
-  "EPL_AGE17",
-  "EPL_DISABL",
-  "EPL_SNGPNT",
-  "EPL_MINRTY",
-  "EPL_LIMENG",
-  "EPL_MUNIT",
-  "EPL_MOBILE",
-  "EPL_CROWD",
-  "EPL_NOVEH",
-  "EPL_GROUPQ",
-  "EPL_PCI"
-))
-counties <- cbind(counties, county_SVI[match(FIPS, SVI_fips), ])
+
+# exclude locations
+county_SVI <- county_SVI[8:dim(county_SVI)[2]]
+
+# get all the variables except the one containing theme
+counties <- cbind(counties, county_SVI[match(FIPS, SVI_fips), 
+                                       !grepl("theme" , names(county_SVI))])
 
 
 ################ County ACS ##################
 
-acs <- read.csv(here("Analysis/update_data/data/raw/acs_2018_Jun.csv"))
+acs <- read.csv(RAW_DATA_PATH("acs_2018_Jun.csv"))
 counties <- cbind(counties, acs[match(FIPS, acs$GEIOD), 3:ncol(acs)])
 
 # Prepare states to match census state fips to NOAA state fips
@@ -182,21 +184,19 @@ states_fips <- purrr::map(states, function(state) usf$stateFIPS[which(usf$State 
 
 ################ Climate Change Data ##################
 
-
-temp_lm_models_by_county <- read_excel(here("Analysis/update_data/data/raw/temp_lm_models_by_county.xlsx"))
+temp_lm_models_by_county <- read_excel(RAW_DATA_PATH("temp_lm_models_by_county.xlsx"))
 
 counties <- merge(counties, 
                   temp_lm_models_by_county, by.x = "FIPS", by.y = "fips")
 
 
-
 ################ Commuting Data ##################
 
-commuting <- readxl::read_excel(here("Analysis/update_data/data/raw/USCommuting2015.xlsx"), skip = 6)
+commuting <- read_excel(RAW_DATA_PATH("USCommuting2015.xlsx"), skip = 6)
 commuting <- commuting[1:139433, ]
+FIPS <- counties$FIPS
 
-
-add_commute = function(commute_type){
+add_commute = function(commute_type, counties){
   if(commute_type=="residence") col_ind <- 1 else col_ind <- 5
   
   fips <- as.integer(commuting[[paste0("State FIPS Code...", col_ind)]]) * 1000 + 
@@ -204,16 +204,17 @@ add_commute = function(commute_type){
   by_commute <- aggregate(commuting$`Workers in Commuting Flow`, list(fips = fips), sum)
   
   col_name <- paste0('agg_commuting_by_', commute_type, '_place')
-  counties$col_name <- by_commute$x[match(FIPS, by_commute$fips)]/counties$Population
+  counties[col_name] <- by_commute$x[match(FIPS, by_commute$fips)]/counties$Population
+  return(counties)
 }
 
-add_commute("residence")
-add_commute("work")
+counties <- add_commute("residence", counties)
+counties <- add_commute("work", counties)
 
 
 ################ Employment Data ##################
 
-lbs_employment_types <- read_excel(here("Analysis/update_data/data/raw/lbs_employment_types.xlsx"),
+lbs_employment_types <- read_excel(RAW_DATA_PATH("lbs_employment_types.xlsx"),
                                    sheet = "US_St_Cn_MSA")
 
 
@@ -268,14 +269,14 @@ counties_occ <- counties_occ %>% mutate_at(vars(contains('occ_')), function(x) x
 
 ################ Health Ranking Data ##################
 
-County_Health_Rankings_Data <- read_excel(here("Analysis/update_data/data/raw/2020 County Health Rankings Data.xlsx"),
+County_Health_Rankings_Data <- read_excel(RAW_DATA_PATH("2020 County Health Rankings Data.xlsx"),
                                           sheet = "Ranked Measure Data", skip = 1)
 
 County_Health_Rankings_Data_add_msrs <- County_Health_Rankings_Data %>% 
   select(FIPS,
          soc_assc_rate = `Social Association Rate`)
 
-County_Health_Rankings_Data_add_data <- read_excel(here("Analysis/update_data/data/raw/2020 County Health Rankings Data.xlsx"),
+County_Health_Rankings_Data_add_data <- read_excel(RAW_DATA_PATH("2020 County Health Rankings Data.xlsx"),
                                                    sheet = "Additional Measure Data", skip = 1)
 
 County_Health_Rankings_Data_add_data_msrs <- County_Health_Rankings_Data_add_data %>% 
@@ -292,7 +293,7 @@ counties_add_data <- merge(counties_occ, County_Health_Rankings_Data_targets, by
 
 ################ Political Party Data ##################
 
-countypres_2000_2020 <- read_csv(here("Analysis/update_data/data/raw/countypres_2000-2020.csv"))
+countypres_2000_2020 <- read_csv(RAW_DATA_PATH("countypres_2000-2020.csv"))
 
 countypres2020 <- countypres_2000_2020 %>% filter(year == 2020)
 
@@ -310,10 +311,49 @@ counties_add_data_political <- merge(counties_add_data, countypres2020_rep,
                                      by.x= "FIPS", by.y= "county_fips")
 
 
+################ Census segregation estimation ##################
+
+my_states <- state.abb
+
+get_info_from_acs = function(geography){
+  info <- get_acs(geography = geography, 
+                  year = 2019,
+                  variables = c(tpop = "B01003_001", 
+                                tpopr = "B03002_001", 
+                                nhwhite = "B03002_003", 
+                                nhblk = "B03002_004",
+                                nhasn = "B03002_006", 
+                                hisp = "B03002_012"),
+                  state = my_states,
+                  survey = "acs5",
+                  geometry = TRUE)
+  return(info)
+}
+
+us.tracts <- get_info_from_acs("tract")
+
+us.county <- get_info_from_acs("county")
+
+fips_name <- subset(us.county, select = c(GEOID, NAME))
+
+# Make the data tidy, calculate and keep essential vars. 
+# Also take out zero population tracts
+us.tracts <- us.tracts %>% 
+  select(-(moe)) %>%
+  spread(key = variable, value = estimate) %>%
+  mutate(pnhwhite = nhwhite/tpopr, pnhasn = nhasn/tpopr, 
+         pnhblk = nhblk/tpopr, phisp = hisp/tpopr, oth = tpopr - (nhwhite+nhblk+nhasn+hisp), 
+         poth = oth/tpopr, nonwhite = tpopr-nhwhite, pnonwhite = nonwhite/tpopr) %>%
+  select(c(GEOID,tpop, tpopr, pnhwhite, pnhasn, pnhblk, phisp,
+           nhwhite, nhasn, nhblk, hisp, nonwhite, pnonwhite, oth, poth))  %>%
+  filter(tpop != 0)
+
+
+
 ##################################################################################
 ####################### MOBILITY DATA PROCESSING #################################
 ##################################################################################
-summary_report_US <- read.csv(here("Analysis/update_data/data/raw/summary_report_US.txt"))
+summary_report_US <- read.csv(RAW_DATA_PATH("summary_report_US.txt"))
 
 summary_report_US$date <- as.Date(summary_report_US$date, "%Y-%m-%d")
 
@@ -354,7 +394,7 @@ google_mobility_coefs_wide <- widen_panel(google_mobility_coefs_panel, separator
 
 google_mobility_coefs_wide$state <- state.abb[match(google_mobility_coefs_wide$state,state.name)]
 
-fips_state_crosswalk <- read_excel(here("Analysis/update_data/data/processed/fips_state_crosswalk.xlsx"))
+fips_state_crosswalk <- read_excel(PROCESSED_DATA_PATH("fips_state_crosswalk.xlsx"))
 
 counties_add_data_political_xwalk <- merge(counties_add_data_political, fips_state_crosswalk, on = "FIPS")
 
@@ -364,12 +404,33 @@ counties_add_data_political_xwalk_google_mob <- merge(counties_add_data_politica
 
 write.csv(
   counties_add_data_political_xwalk_google_mob,
-  here("Analysis/update_data/data/processed/CountiesMergedData_Oct_08_2021.csv")
+  PROCESSED_DATA_PATH("CountiesMergedData_Oct_17_2021.csv")
 )
 
 
+################ Read from 00 ##################
+
+# Changed to CountiesMergedData_July_10.csv
+covid_data_unprocessed <- read_csv(PROCESSED_DATA_PATH("CountiesMergedData_Oct_17_2021.csv"))
+# covid_data_unprocessed <- counties_add_data_political_xwalk_google_mob
+covid_data_unprocessed <- covid_data_unprocessed[,-1]
+
+## remove character values that aren't needed
+covid_data_unprocessed <- covid_data_unprocessed %>% 
+  select(-c(Name, CTYNAME, NearestAirportName, NearestAirportOver5000000Name))
+
+char_columns <- sapply(covid_data_unprocessed, is.character)
+covid_data_unprocessed[char_columns] <- lapply(covid_data_unprocessed[char_columns], as.factor)
+
+
+## these variables still need standardization by population: 
+std_variables <- c("Premature.death.raw.value", "HIV.prevalence.raw.value", "Sexually.transmitted.infections.raw.value", "Preventable.hospital.stays.raw.value")
+
+covid_data_unprocessed[std_variables] = covid_data_unprocessed[std_variables]/covid_data_unprocessed$Population
+
+
 ################ Air pollution Data ##################
-LUR.air.pollution.data <- read.csv(here('Analysis/update_data/data/raw/LUR_pollution_data.csv'))
+LUR.air.pollution.data <- read.csv(RAW_DATA_PATH('LUR_pollution_data.csv'))
 
 LUR.air.pollution.data <- LUR.air.pollution.data %>% mutate_at(c("year", "pollutant"), as.factor) 
 
@@ -382,10 +443,11 @@ LUR.air.pull.wide <- means.cross.year %>%
 
 
 ################ Mask Use Variable ##################
-mask.use.data <- read.csv(here('Analysis/update_data/data/raw/mask-use-by-county.csv'))
+mask.use.data <- read.csv(RAW_DATA_PATH('mask-use-by-county.csv'))
+
 
 ################ Lead Exposure Variable ##################
-lead_risk_score <- read_csv(here("Analysis/update_data/data/raw/lead-risk-score.csv"))
+lead_risk_score <- read_csv(RAW_DATA_PATH("lead-risk-score.csv"))
 lead_risk_score <- lead_risk_score[,-1]
 
 lead_risk_score <- lead_risk_score %>%
@@ -398,16 +460,17 @@ lead_risk_score <- lead_risk_score %>%
 
 ################ Water Contaminant Exposure Variable ##################
 
-summarized_contaminants_raw <- read_csv(here("Analysis/update_data/data/raw/summarized_contaminants.csv"))
+summarized_contaminants_raw <- read_csv(RAW_DATA_PATH("summarized_contaminants.csv"))
 
 summarized_contaminants_ratio <- summarized_contaminants_raw %>%
   subset(select = -c(fips,`number of points`)) / summarized_contaminants_raw$`number of points`
 
 summarized_contaminants_ratio$fips <- summarized_contaminants_raw$fips
 
+
 ################ PESTICIDE EXPOSURE VARIABLES ##################
 
-pesticide_data <- read.csv(here('Analysis/update_data/data/raw/EPest_county_estimates_2013_2017_v2.txt'), sep = "\t")
+pesticide_data <- read.csv(RAW_DATA_PATH('EPest_county_estimates_2013_2017_v2.txt'), sep = "\t")
 
 pesticide_data <- pesticide_data %>%
   rowwise() %>% mutate(kg_avg=mean(c(EPEST_LOW_KG, EPEST_HIGH_KG), na.rm=T)) 
@@ -422,18 +485,18 @@ pesticide_avgs_by_year <- pesticide_data %>%
 pesticide_avgs_by_year <- pesticide_avgs_by_year %>% 
   pivot_wider(names_from = COMPOUND, values_from = mean_kg)
 
-pesticide_avgs_by_year <- pesticide_avgs_by_year[, which(colMeans(!is.na(pesticide_avgs_by_year)) > na_thresh)]
+pesticide_avgs_by_year <- pesticide_avgs_by_year[, which(colMeans(!is.na(pesticide_avgs_by_year)) > NA_THRESH)]
 
-pesticide_avgs_by_year <- na.interpolation(pesticide_avgs_by_year, option = "spline")
+pesticide_avgs_by_year <- na_interpolation(pesticide_avgs_by_year, option = "spline")
 
 
 ################ CHEMICAL EXPOSURE VARIABLES ##################
-arsenic_violations <- read.csv(paste(RAW_DATA_PATH, 'SDWIS_As_Violations_County_2006-2017_FINAL.csv', sep=''), sep = ",")
+arsenic_violations <- read.csv(RAW_DATA_PATH('SDWIS_As_Violations_County_2006-2017_FINAL.csv'), sep = ",")
 arsenic_violations <- arsenic_violations %>% select(FIPS, Freq)
 colnames(arsenic_violations)[2] <- "water_arsenic_violation_freq"
 
 prepare_data_for_chemicals = function(file_name){
-  chemical_data <- read.csv(paste(RAW_DATA_PATH, file_name, sep=''), sep = ",", stringsAsFactors = FALSE)
+  chemical_data <- read.csv(RAW_DATA_PATH(file_name), sep = ",", stringsAsFactors = FALSE)
   chemical_data$Value <- as.numeric(as.character(chemical_data$Value))
   
   avg_name <- paste("avg", gsub(".csv", "", file_name), sep="_")
@@ -444,14 +507,24 @@ prepare_data_for_chemicals = function(file_name){
   return(chemical_data)
 }
 
-file_names <- list.files(path = RAW_DATA_PATH, pattern = "\\levels.csv$")
-lapply(file_names, prepare_data_for_chemicals)
+file_names <- list.files(path = RAW_DATA_PATH(""), pattern = "\\levels.csv$")
+chemical_dataFrames <- lapply(file_names, prepare_data_for_chemicals)
+
+covid_data_unprocessed <- covid_data_unprocessed %>% rename(countyFIPS = FIPS)
+
+## water quality data
+for (df in chemical_dataFrames){
+  covid_data_unprocessed <- merge(df, covid_data_unprocessed, by.x = "countyFIPS", by.y = "countyFIPS", all.y = TRUE)
+}
+
+avg_names <- paste("avg", gsub(".csv", "", file_names), sep="_")
+covid_data_unprocessed[avg_names] <- na_interpolation(covid_data_unprocessed[avg_names], option = "spline")
 
 
 
 ################ INCARCERATION VARIABLES BY ETHNICITY ##################
 
-incarceration_trends <- read_excel(paste(RAW_DATA_PATH, 'incarceration_trends.xlsx', sep=''))
+incarceration_trends <- read_excel(RAW_DATA_PATH('incarceration_trends.xlsx'))
 incarceration_trends <- incarceration_trends %>%
   filter(year == 2018)
 
@@ -494,26 +567,126 @@ incarceration_trends <- subset(incarceration_trends,
                                           & !names(incarceration_trends) %in% c("total_pop", "total_jail_pop_rate"))
 
 
-incarceration_trends <- subset(incarceration_trends, select = -c(total_pop, 
-                                                                 total_pop_15to64,
-                                                                 female_pop_15to64, 
-                                                                 male_pop_15to64, 
-                                                                 aapi_pop_15to64,
-                                                                 black_pop_15to64,
-                                                                 latinx_pop_15to64,
-                                                                 native_pop_15to64,
-                                                                 white_pop_15to64,
-                                                                 total_jail_pop_rate))
+
+################ Merge Data ##################
+
+merge_dfs <- c("LUR.air.pull.wide", "mask.use.data", "lead_risk_score", "summarized_contaminants_ratio", 
+                   "pesticide_avgs_by_year", "arsenic_violations")
+
+fips_columns <- c("fips", "COUNTYFP", "fips", "fips", "fips", "FIPS")
+
+for (i in 1:length(merge_dfs)){
+  df <- get(merge_dfs[i])
+  covid_data_unprocessed <- merge(covid_data_unprocessed, df, by.x = "countyFIPS", by.y = fips_columns[i])
+}
 
 
+covid_data_unprocessed <- merge(incarceration_trends, covid_data_unprocessed, by.x = "fips", by.y = "countyFIPS", all.y = TRUE)
 
 
 ################ STRUCTURAL RACISM VARIABLES ##################
 
+structural_racism <- read_excel(RAW_DATA_PATH("structural_racism_all_forsharing2021.xls"))
+structural_racism[ structural_racism == "NA" ] <- NA
+structural_racism <- structural_racism[, which(colMeans(!is.na(structural_racism)) > NA_THRESH)]
 
+
+covid_data_unprocessed <- merge(structural_racism, covid_data_unprocessed, by.x = "GEOID2", by.y = "fips", all.y = TRUE)
+
+colnames(covid_data_unprocessed)[which(colnames(covid_data_unprocessed) == "GEOID2")] <- "fips"
+covid_data_unprocessed <- subset(covid_data_unprocessed, select=-c(state_code, name))
 
 
 ################ CLEANING ##################
+
+# get data dictionary 
+Data_Dictionary <- read_excel(PROCESSED_DATA_PATH("Data_Dictionary.xlsx"))
+
+vars_2_keep <- Data_Dictionary %>% 
+  filter(Keep == "Yes")
+
+covid_data_unprocessed  <- covid_data_unprocessed %>% 
+  select(vars_2_keep$`Variable Name`)
+
+## remove columns with NA greater than threshold
+covid_data_processed <- covid_data_unprocessed[, which(colMeans(!is.na(covid_data_unprocessed)) > NA_THRESH)]
+
+vars_rmv_na <- colnames(covid_data_unprocessed)[names(covid_data_unprocessed) %notin% names(covid_data_processed)]
+write.csv(vars_rmv_na, PROCESSED_DATA_PATH("vars_removed_na_thresh.csv"))
+
+## removing near zero variance variables
+nz_idx_vector <- nearZeroVar(
+  covid_data_processed,
+  freqCut = 95/5,
+  uniqueCut = 10,
+  saveMetrics = FALSE,
+  names = FALSE,
+  foreach = FALSE,
+  allowParallel = TRUE
+)
+
+## what variables are near non-varying
+if (length(nz_idx_vector) > 0) {
+  covid_data_processed <- covid_data_processed[,-nz_idx_vector]
+}
+
+
+## check structures of data 
+char_vars <- names(covid_data_processed[, sapply(covid_data_processed, class) == 'character'])
+
+covid_data_processed <- data.frame(lapply(covid_data_processed,
+                                          function(x) as.numeric(as.character(x))))
+
+
+outcomes <- c("CountyRelativeDay100Cases", 
+              "TotalCasesUpToDate", 
+              "CountyRelativeDay100Deaths", 
+              "TotalDeathsUpToDate", 
+              "FirstCaseDay",
+              "Deathsat1year",
+              "Casesat1year")
+
+outcome_data <- covid_data_processed[,c(outcomes, "fips")]
+
+## check for na in outcome data
+list_na <- colnames(outcome_data)[ apply(outcome_data, 2, anyNA) ]
+
+number_na <- colSums(is.na(outcome_data))
+number_na
+
+## only a few, we will remove these at the last step
+
+## remove outcomes
+covid_data_processed_features <- covid_data_processed %>% 
+  select(-outcomes)
+
+## impute the mean for NA values in the numeric dataset (we already filtered for NA columns greater than 75%)
+covid_data_processed_features_numeric_imputed<- na_mean(covid_data_processed_features, option = "mean")
+covid_data_processed_features_numeric_imputed$fips <- as.numeric(covid_data_processed_features_numeric_imputed$fips)
+
+## identifying and removing highly correlated features
+descrCor <- cor(covid_data_processed_features_numeric_imputed)
+descrCor[upper.tri(descrCor)] <- 0
+diag(descrCor) <- 0
+
+names(covid_data_processed_features_numeric_imputed[,apply(descrCor, 2, function(x) any(x > CORR_THRESH))])
+covid_data_processed_features_numeric_imputed_corr_rem <- covid_data_processed_features_numeric_imputed[,!apply(descrCor,2,function(x) any(x > CORR_THRESH))]
+
+covid_data_processed_features_numeric_imputed_corr_rem$occ_total_all_industries <- covid_data_processed_features_numeric_imputed$occ_total_all_industries
+
+final_covid_processed <- covid_data_processed_features_numeric_imputed_corr_rem
+
+
+## add the outcome back in and let's just remove the rows with NAs for outcome
+
+## quick function to remove rows with any NA from selected columns
+completeFun <- function(data, desiredCols) {
+  completeVec <- complete.cases(data[, desiredCols])
+  return(data[completeVec, ])
+}
+
+final_covid_processed <- merge(outcome_data, final_covid_processed, by = "fips")
+final_covid_processed <- completeFun(final_covid_processed, outcomes)
 
 
 
