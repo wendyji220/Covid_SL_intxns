@@ -1,8 +1,7 @@
 ################ Load Libraries ##################
 
 packages <- c("tigris", "sf", "caret", "rvest", "dplyr", 
-              "tidyverse", "tidycensus","tmap", "rmapshaper", 
-              "here", "tidyr", "readxl", "panelr", "pROC", "imputeTS")
+              "tidyverse", "tidycensus", "here", "tidyr", "readxl", "panelr", "pROC", "imputeTS")
 
 check_packages = function(p){
   if(!require(p, character.only = TRUE)){
@@ -116,7 +115,6 @@ for (i in 1:nrow(counties)) {
 
 county_population <- read.csv(PROCESSED_DATA_PATH("nir_covid_county_population_usafacts.csv"))
 counties$Population <- county_population$population[match(FIPS, as.integer(county_population$countyFIPS))]
-
 
 ################ County GDP Data ##################
 
@@ -312,43 +310,10 @@ counties_add_data_political <- merge(counties_add_data, countypres2020_rep,
 
 
 ################ Census segregation estimation ##################
+racial_seg_census <- read_csv(PROCESSED_DATA_PATH("racial_seg_census_api.csv")) %>% select(-c("...1"))
 
-my_states <- state.abb
-
-get_info_from_acs = function(geography){
-  info <- get_acs(geography = geography, 
-                  year = 2019,
-                  variables = c(tpop = "B01003_001", 
-                                tpopr = "B03002_001", 
-                                nhwhite = "B03002_003", 
-                                nhblk = "B03002_004",
-                                nhasn = "B03002_006", 
-                                hisp = "B03002_012"),
-                  state = my_states,
-                  survey = "acs5",
-                  geometry = TRUE)
-  return(info)
-}
-
-us.tracts <- get_info_from_acs("tract")
-
-us.county <- get_info_from_acs("county")
-
-fips_name <- subset(us.county, select = c(GEOID, NAME))
-
-# Make the data tidy, calculate and keep essential vars. 
-# Also take out zero population tracts
-us.tracts <- us.tracts %>% 
-  select(-(moe)) %>%
-  spread(key = variable, value = estimate) %>%
-  mutate(pnhwhite = nhwhite/tpopr, pnhasn = nhasn/tpopr, 
-         pnhblk = nhblk/tpopr, phisp = hisp/tpopr, oth = tpopr - (nhwhite+nhblk+nhasn+hisp), 
-         poth = oth/tpopr, nonwhite = tpopr-nhwhite, pnonwhite = nonwhite/tpopr) %>%
-  select(c(GEOID,tpop, tpopr, pnhwhite, pnhasn, pnhblk, phisp,
-           nhwhite, nhasn, nhblk, hisp, nonwhite, pnonwhite, oth, poth))  %>%
-  filter(tpop != 0)
-
-
+counties_add_data_political <- merge(counties_add_data_political, racial_seg_census, 
+                                     by.x = "FIPS", by.y = "FIPS")
 
 ##################################################################################
 ####################### MOBILITY DATA PROCESSING #################################
@@ -404,14 +369,14 @@ counties_add_data_political_xwalk_google_mob <- merge(counties_add_data_politica
 
 write.csv(
   counties_add_data_political_xwalk_google_mob,
-  PROCESSED_DATA_PATH("CountiesMergedData_Oct_17_2021.csv")
+  PROCESSED_DATA_PATH("CountiesMergedData_Oct_22_2021.csv")
 )
 
 
 ################ Read from 00 ##################
 
 # Changed to CountiesMergedData_July_10.csv
-covid_data_unprocessed <- read_csv(PROCESSED_DATA_PATH("CountiesMergedData_Oct_17_2021.csv"))
+covid_data_unprocessed <- read_csv(PROCESSED_DATA_PATH("CountiesMergedData_Oct_22_2021.csv"))
 # covid_data_unprocessed <- counties_add_data_political_xwalk_google_mob
 covid_data_unprocessed <- covid_data_unprocessed[,-1]
 
@@ -612,7 +577,7 @@ covid_data_unprocessed  <- covid_data_unprocessed %>%
 covid_data_processed <- covid_data_unprocessed[, which(colMeans(!is.na(covid_data_unprocessed)) > NA_THRESH)]
 
 vars_rmv_na <- colnames(covid_data_unprocessed)[names(covid_data_unprocessed) %notin% names(covid_data_processed)]
-write.csv(vars_rmv_na, PROCESSED_DATA_PATH("vars_removed_na_thresh.csv"))
+write.csv(vars_rmv_na, PROCESSED_DATA_PATH("vars_removed_na_thresh_combined.csv"))
 
 ## removing near zero variance variables
 nz_idx_vector <- nearZeroVar(
@@ -654,8 +619,6 @@ list_na <- colnames(outcome_data)[ apply(outcome_data, 2, anyNA) ]
 number_na <- colSums(is.na(outcome_data))
 number_na
 
-## only a few, we will remove these at the last step
-
 ## remove outcomes
 covid_data_processed_features <- covid_data_processed %>% 
   select(-outcomes)
@@ -688,6 +651,9 @@ completeFun <- function(data, desiredCols) {
 final_covid_processed <- merge(outcome_data, final_covid_processed, by = "fips")
 final_covid_processed <- completeFun(final_covid_processed, outcomes)
 
+
+## Column bind the outcome data and write the final dataset
+write.csv(final_covid_processed, file = PROCESSED_DATA_PATH("cleaned_covid_data_final_Oct_22_21.csv"))
 
 
 
