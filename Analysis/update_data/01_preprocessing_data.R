@@ -168,7 +168,7 @@ tthm_lvls <- tthm_lvls %>%
 ####################### INCARCERATION VARIABLES BY ETHNICITY #################################
 ##############################################################################################
 
-incarceration_trends <- read_excel("Analysis/update_data/data/raw/incarceration_trends.xlsx")
+incarceration_trends <- read_excel(here("Analysis/update_data/data/raw/incarceration_trends.xlsx"))
 incarceration_trends <- incarceration_trends %>%
   filter(year == 2018)
 
@@ -257,7 +257,7 @@ covid_data_unprocessed$avg_tthm_lvls <- na.interpolation(covid_data_unprocessed$
 ####################### STRUCTURAL RACISM VARIABLES ##########################################
 ##############################################################################################
 
-structural_racism <- read_excel("Analysis/update_data/data/raw/structural_racism_all_forsharing2021.xls")
+structural_racism <- read_excel(here("Analysis/update_data/data/raw/structural_racism_all_forsharing2021.xls"))
 structural_racism[ structural_racism == "NA" ] <- NA
 structural_racism <- structural_racism[, which(colMeans(!is.na(structural_racism)) > na_thresh)]
 
@@ -273,7 +273,7 @@ covid_data_unprocessed <- subset(covid_data_unprocessed, select=-c(state_code, n
 
 
 # get data dictionary 
-Data_Dictionary <- read_excel("Analysis/update_data/data/processed/Data_Dictionary.xlsx")
+Data_Dictionary <- read_excel(here("Analysis/update_data/data/processed/Data_Dictionary.xlsx"))
 
 vars_2_keep <- Data_Dictionary %>% 
   filter(Keep == "Yes") %>% select(`Variable Name`)
