@@ -600,7 +600,7 @@ if (length(nz_idx_vector) > 0) {
 char_vars <- names(covid_data_processed[, sapply(covid_data_processed, class) == 'character'])
 
 covid_data_processed <- data.frame(lapply(covid_data_processed,
-                                          function(x) as.numeric(as.character(x))))
+                                          function(x) as.numeric(as.character(x))), check.names = FALSE)
 
 
 outcomes <- c("CountyRelativeDay100Cases", 
