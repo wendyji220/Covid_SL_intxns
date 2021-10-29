@@ -37,7 +37,7 @@ library(doParallel)
 plan(multisession)
 
 ## load data
-covid_data_processed <- read_csv(here("Analysis/update_data/data/processed/cleaned_covid_data_final_sept_24_21.csv"))
+covid_data_processed <- read.csv(here("Analysis/update_data/data/processed/cleaned_covid_data_final_Oct_22_21.csv"), check.names = FALSE)
 covid_data_processed <- covid_data_processed[,-1]
 
 Data_Dictionary <- read_excel(here("Analysis/update_data/data/processed/Data_Dictionary.xlsx"))
@@ -51,9 +51,9 @@ sapply(list.files(path = here("Analysis/poisson_learners"),
                   source)
 
 
-covid_data_processed$CountyRelativeDay100Cases <- covid_data_processed$CountyRelativeDay100Cases / covid_data_processed$Population 
-covid_data_processed$TotalCasesUpToDate <- covid_data_processed$TotalCasesUpToDate / covid_data_processed$Population 
-covid_data_processed$CountyRelativeDay100Deaths <- covid_data_processed$CountyRelativeDay100Deaths / covid_data_processed$Population 
+covid_data_processed$CountyRelativeDay100Cases <- covid_data_processed$CountyRelativeDay100Cases / covid_data_processed$Population
+covid_data_processed$TotalCasesUpToDate <- covid_data_processed$TotalCasesUpToDate / covid_data_processed$Population
+covid_data_processed$CountyRelativeDay100Deaths <- covid_data_processed$CountyRelativeDay100Deaths / covid_data_processed$Population
 covid_data_processed$TotalDeathsUpToDate <- covid_data_processed$TotalDeathsUpToDate / covid_data_processed$Population
 covid_data_processed$Deathsat1year <- covid_data_processed$Deathsat1year / covid_data_processed$Population
 covid_data_processed$Casesat1year <- covid_data_processed$Casesat1year / covid_data_processed$Population
@@ -67,9 +67,17 @@ outcomes <- c("CountyRelativeDay100Cases",
               "Casesat1year")
 
 
+# outcomes <- c("COVID Cases 100 Days After First Case in County", 
+#               "Total COVID Cases To-Date", 
+#               "COVID Deaths 100 Days After First Case in County" , 
+#               "Total COVID Deaths To-Date", 
+#               "COVID Deaths at 1 Year",
+#               "COVID Cases at 1 Year")
+
+
 covars <- colnames(covid_data_processed)[-which(names(covid_data_processed) %in% c(
   outcomes,
-  "FIPS",
+  "fips",
   "county_names"
 ))]
 
@@ -79,7 +87,9 @@ varimp_server <- function(fit,
                           outcome,
                           data = covid_data_processed,
                           data_dictionary = Data_Dictionary, 
-                          label = label) 
+                          label = label,
+                          thresh = 1.02,
+                          m = 3) 
 {
   
     # best_estimator <- fit$learner_fits[[which(fit$coefficients == 1)]]
@@ -90,7 +100,7 @@ varimp_server <- function(fit,
     preds <- fit$predict_fold(task, fold_number = "validation")
     risk <- mean(loss(preds, Y))
     
-    nworkers <- 18 #as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
+    nworkers <- 5 #as.numeric(Sys.getenv('SLURM_CPUS_ON_NODE'))
     nworkers
     doParallel::registerDoParallel(nworkers)
     
@@ -146,7 +156,49 @@ varimp_server <- function(fit,
     quantile_results_ordered <- quantile_results[order(-quantile_results$risk_difference)]
     
     merged_results <- merge(risk_results_ordered, quantile_results_ordered, by= "X")
+    merged_results <- subset(merged_results, merged_results$X != "CentroidLon" & merged_results$X != "CentroidLat" & merged_results$X != "Latitude"  & merged_results$X != "Longitude")
+    risk_results <- subset(risk_results, risk_results$X != "CentroidLon" & risk_results$X != "CentroidLat" & risk_results$X != "Latitude"  & risk_results$X != "Longitude")
+    
     merged_results$X<- data_dictionary$`Nice Label`[match(merged_results$X, data_dictionary$`Variable Name`)]
+    
+    variable_combinations <- combn(subset(risk_results, risk_ratio > quantile(merged_results$risk_ratio, .96))$X, m = m)
+    ### Create list with all intxn_size interactions for the intxn_list variable set of interest:
+    variable_combinations <- as.data.frame(variable_combinations)
+    ### Run the additive vs. joint error calculation for each set of possible interactions of selected size:
+    
+    permuted_importance <- foreach(i = 1:dim(variable_combinations)[2], .combine = 'rbind') %dopar% {
+      target_vars <- variable_combinations[,i]
+      ## compute the additive risk for this set of variables
+      additives <- risk_importance[target_vars]
+      additive_risk <- sum(unlist(additives) - 1) + 1 
+      
+      ## calculate the permuted risk for this set of variables
+      scrambled_rows <- dat[sample(nrow(dat)), ]
+      scrambled_rows_selection <- scrambled_rows %>% dplyr::select(!!target_vars)
+      scrambled_col_names <- task$add_columns(scrambled_rows_selection)
+      scrambled_col_task <- task$next_in_chain(column_names = scrambled_col_names)
+      scrambled_sl_preds <- fit$predict_fold(scrambled_col_task, 
+                                             fold_number = "validation")
+      
+      risk_scrambled <- mean(loss(scrambled_sl_preds, Y))
+      varimp_metric <- risk_scrambled/risk
+      
+      target_vars <- data_dictionary$`Nice Label`[match(target_vars, data_dictionary$`Variable Name`)]
+      
+      result <- cbind(paste(target_vars, collapse = " & "), varimp_metric, additive_risk)
+      result
+    }
+    
+    permuted_importance <- as.data.frame(permuted_importance)
+    permuted_importance$diff <- round(as.numeric(permuted_importance$varimp_metric) - as.numeric(permuted_importance$additive_risk), 3)
+    colnames(permuted_importance)[1] <- "Variable Combo"
+    
+    test <- subset(permuted_importance, diff >= quantile(permuted_importance$diff , .95))
+    test <- melt(test, id.vars=c("Variable Combo", "diff"))
+    test$value <- round(as.numeric(test$value),3)
+    
+    test$variable <- factor(test$variable, levels=c("varimp_metric", "additive_risk"), labels=c("Joint Risk", "Additive Risk"))
+    colnames(test)[3] <- "Type"
     
     risk_plot <- merged_results %>%
       arrange(risk_ratio) %>%    # First sort by val. This sort the dataframe but NOT the factor levels
@@ -172,14 +224,27 @@ varimp_server <- function(fit,
       ylab("Difference between 75th and 25th Quantile") + 
       xlab("")
     
+
+    joint_permutation_plot <- test %>% 
+      group_by(`Variable Combo`) %>%
+      ggplot(aes(x= value, y= reorder(`Variable Combo`,value))) +
+      geom_line(aes(group = `Variable Combo`),color="grey") +
+      geom_point(aes(color=Type), size=4) +
+      labs(y="Combination") + 
+      ylab("County Features") +
+      xlab("Model Risk Ratio") +
+      theme_bw() 
+    
+    
     p <- plot_grid(risk_plot, quantile_plot, labels = label)
     ggsave(here(paste("Visulizations/New_Varimp/", "varimp_", label, ".png", sep = "")), p)
-
+    ggsave(here(paste("Visulizations/New_Varimp/", "jointimp_", label, ".png", sep = "")), joint_permutation_plot, width = 15, height = 6)
     
   return(merged_results)
 }
-
-
+covid_data_processed$pm10
+covid_data_processed$EPL_AGE65
+covid_data_processed$pct_female_2018
 ## use a function to apply task over multiple outcomes 
 run_sl3_poisson_lrns <- function(outcome, 
                                  data, 
@@ -368,7 +433,7 @@ Casestodate <- run_sl3_poisson_lrns(outcome = "TotalCasesUpToDate",
                                             data = covid_data_processed, 
                                             covars = covars,
                                             data_dictionary = Data_Dictionary, 
-                                            label = "Total COVID Cases To-Date")
+                                            label = "Total COVID-19 Cases To-Date")
 
 # ptm <- proc.time()
 # ML_pipeline_output <- purrr::walk(.x = outcomes[1:length(outcomes)], 
