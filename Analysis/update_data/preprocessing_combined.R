@@ -1,21 +1,6 @@
-################ Load Libraries ##################
-
-packages <- c("tigris", "sf", "caret", "rvest", "dplyr", 
-              "tidyverse", "tidycensus", "here", "tidyr", "readxl", "panelr", "pROC", "imputeTS")
-
-check_packages = function(p){
-  if(!require(p, character.only = TRUE)){
-    install.packages(p)
-  }
-  library(p, character.only = TRUE)
-}
-
-lapply(packages, check_packages)
-
+source("util.R")
 
 ################ Define Global Variables ##################
-
-`%notin%` <- Negate(`%in%`)
 
 ## thresholds
 NA_THRESH <- 0.80
@@ -23,16 +8,6 @@ CORR_THRESH <- 0.99
 
 ## run census variable rename? 
 CENSUS_DATA_RENAME <- FALSE
-
-RAW_DATA_PATH = function(file_name){
-  return(paste(here('Analysis/update_data/data/raw/'), file_name, sep=''))
-}
-
-PROCESSED_DATA_PATH = function(file_name){
-  return(paste(here('Analysis/update_data/data/processed/'), file_name, sep=''))
-}
-
-
 
 ################ US Facts ##################
 
